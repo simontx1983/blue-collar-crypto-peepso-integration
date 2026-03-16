@@ -15,22 +15,19 @@ if (!defined('ABSPATH')) exit;
 if (!function_exists('bcc_get_field_visibility')) {
 
 function bcc_get_field_visibility($post_id, $field) {
-    
-    // Use a static cache to avoid multiple DB queries for same field
-    static $cache = [];
+
+    // Global cache so bcc_clear_visibility_cache() can actually reach it.
+    global $bcc_vis_cache;
+
     $cache_key = $post_id . '_' . $field;
-    
-    if (isset($cache[$cache_key])) {
-        return $cache[$cache_key];
+
+    if (isset($bcc_vis_cache[$cache_key])) {
+        return $bcc_vis_cache[$cache_key];
     }
 
-    $vis = get_post_meta($post_id, '_bcc_vis_' . $field, true);
+    $vis = get_post_meta($post_id, '_bcc_vis_' . $field, true) ?: 'public';
 
-    if (!$vis) {
-        $vis = 'public'; // default
-    }
-    
-    $cache[$cache_key] = $vis;
+    $bcc_vis_cache[$cache_key] = $vis;
 
     return $vis;
 }
@@ -62,8 +59,8 @@ function bcc_user_can_view_field($post_id, $field) {
         return bcc_user_is_owner($post_id);
     }
 
-    // Fallback safe allow
-    return true;
+    // Fallback: deny unrecognized visibility values
+    return false;
 }
 
 }
@@ -101,16 +98,26 @@ function bcc_user_can_edit_field($post_id, $field) {
 if (!function_exists('bcc_set_field_visibility')) {
 
 function bcc_set_field_visibility($post_id, $field, $visibility) {
-    
+
     // Validate post exists
     if (!get_post($post_id)) {
         return false;
     }
-    
-    // Validate field name isn't empty
+
+    // Authorization check
+    if (function_exists('bcc_user_can_edit_post')) {
+        if (!bcc_user_can_edit_post($post_id)) {
+            return false;
+        }
+    } elseif (!current_user_can('edit_post', $post_id)) {
+        return false;
+    }
+
+    // Validate and sanitize field name
     if (empty($field)) {
         return false;
     }
+    $field = sanitize_key($field);
 
     if (!in_array($visibility, ['public', 'members', 'private'], true)) {
         return false;
@@ -135,131 +142,27 @@ function bcc_set_field_visibility($post_id, $field, $visibility) {
 if (!function_exists('bcc_clear_visibility_cache')) {
 
 function bcc_clear_visibility_cache($post_id = null, $field = null) {
-    // This is a placeholder for when you want to implement
-    // more sophisticated cache clearing. For now, the static
-    // cache will clear automatically on page reload.
-    
-    // You could implement transients, object cache, etc. here
+    global $bcc_vis_cache;
+
+    if (!is_array($bcc_vis_cache)) {
+        return true;
+    }
+
+    if ($post_id && $field) {
+        unset($bcc_vis_cache[$post_id . '_' . $field]);
+    } elseif ($post_id) {
+        $prefix = $post_id . '_';
+        foreach (array_keys($bcc_vis_cache) as $key) {
+            if (strpos($key, $prefix) === 0) {
+                unset($bcc_vis_cache[$key]);
+            }
+        }
+    } else {
+        $bcc_vis_cache = [];
+    }
+
     return true;
 }
 
 }
 
-/* ======================================================
-   GET ALL FIELD VISIBILITY SETTINGS FOR A POST (debug helper)
-====================================================== */
-
-if (!function_exists('bcc_get_all_field_visibility')) {
-
-function bcc_get_all_field_visibility($post_id) {
-    global $wpdb;
-    
-    if (!$post_id || !is_numeric($post_id)) {
-        return [];
-    }
-    
-    $meta_key_prefix = '_bcc_vis_';
-    $meta_key_pattern = $meta_key_prefix . '%';
-    
-    $results = $wpdb->get_results($wpdb->prepare(
-        "SELECT meta_key, meta_value FROM {$wpdb->postmeta} 
-         WHERE post_id = %d AND meta_key LIKE %s",
-        $post_id,
-        $meta_key_pattern
-    ));
-    
-    $visibility = [];
-    foreach ($results as $row) {
-        $field = str_replace($meta_key_prefix, '', $row->meta_key);
-        $visibility[$field] = $row->meta_value;
-    }
-    
-    return $visibility;
-}
-
-}
-
-/* ======================================================
-   BULK SET FIELD VISIBILITY (utility helper)
-====================================================== */
-
-if (!function_exists('bcc_bulk_set_field_visibility')) {
-
-function bcc_bulk_set_field_visibility($post_id, $visibility_map) {
-    
-    if (!is_array($visibility_map) || empty($visibility_map)) {
-        return false;
-    }
-    
-    $success = 0;
-    $total = 0;
-    
-    foreach ($visibility_map as $field => $visibility) {
-        $total++;
-        if (bcc_set_field_visibility($post_id, $field, $visibility)) {
-            $success++;
-        }
-    }
-    
-    return [
-        'success' => $success,
-        'total' => $total,
-        'message' => "Set {$success} of {$total} visibility settings"
-    ];
-}
-
-}
-
-/* ======================================================
-   DELETE FIELD VISIBILITY (cleanup helper)
-====================================================== */
-
-if (!function_exists('bcc_delete_field_visibility')) {
-
-function bcc_delete_field_visibility($post_id, $field) {
-    
-    if (!$post_id || empty($field)) {
-        return false;
-    }
-    
-    $result = delete_post_meta($post_id, '_bcc_vis_' . $field);
-    
-    // Clear cache if we're using caching
-    if (function_exists('bcc_clear_visibility_cache')) {
-        bcc_clear_visibility_cache($post_id, $field);
-    }
-    
-    return (bool) $result;
-}
-
-}
-
-/* ======================================================
-   DELETE ALL FIELD VISIBILITY FOR A POST (cleanup helper)
-====================================================== */
-
-if (!function_exists('bcc_delete_all_field_visibility')) {
-
-function bcc_delete_all_field_visibility($post_id) {
-    global $wpdb;
-    
-    if (!$post_id || !is_numeric($post_id)) {
-        return false;
-    }
-    
-    $meta_key_prefix = '_bcc_vis_';
-    $meta_key_pattern = $meta_key_prefix . '%';
-    
-    $result = $wpdb->delete(
-        $wpdb->postmeta,
-        [
-            'post_id' => $post_id,
-            'meta_key' => $meta_key_pattern
-        ],
-        ['%d', '%s']
-    );
-    
-    return (bool) $result;
-}
-
-}

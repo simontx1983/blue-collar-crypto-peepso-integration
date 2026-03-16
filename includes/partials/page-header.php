@@ -1,6 +1,5 @@
 <?php
 $PeepSoPageUser = new PeepSoPageUser($page->id);
-$PeepSoPage = new PeepSoPage($page->id);
 $PeepSoPage = $page;
 $coverUrl = $PeepSoPage->get_cover_url();
 $has_cover = false;
@@ -17,31 +16,38 @@ if (FALSE === $PeepSoPageUser->can('manage_page') || (FALSE === $has_cover)) {
 }
 
 $description = str_replace("\n", "<br/>", $page->description);
-$description = html_entity_decode($description);
 
 $page_categories = PeepSoPageCategoriesPages::get_categories_for_page($page->id);
 $page_categories_html = array();
+
+if (!isset($page_segment)) {
+	$page_base_path = rtrim(parse_url($page->get_url(), PHP_URL_PATH), '/');
+	$request_path   = rtrim(strtok($_SERVER['REQUEST_URI'], '?'), '/');
+	$after          = ltrim(substr($request_path, strlen($page_base_path)), '/');
+	$parts          = array_filter(explode('/', $after));
+	$page_segment   = $parts ? reset($parts) : '';
+}
 
 ?>
 <div class="ps-focus ps-focus--page ps-page__profile-focus ps-js-focus ps-js-focus--page ps-js-page-header">
 	<div class="ps-focus__cover ps-js-cover">
 		<div class="ps-focus__cover-image ps-js-cover-wrapper">
-			<img class="ps-js-cover-image" src="<?php echo $PeepSoPage->get_cover_url(); ?>"
-				alt="<?php printf(__('%s cover photo', 'pageso'), $PeepSoPage->get('name')); ?>"
-				style="<?php echo $PeepSoPage->cover_photo_position(); ?>; opacity: 0;" />
+			<img class="ps-js-cover-image" src="<?php echo esc_url($PeepSoPage->get_cover_url()); ?>"
+				alt="<?php printf(esc_attr__('%s cover photo', 'pageso'), esc_attr($PeepSoPage->get('name'))); ?>"
+				style="<?php echo esc_attr($PeepSoPage->cover_photo_position()); ?>; opacity: 0;" />
 			<div class="ps-focus__cover-loading ps-js-cover-loading">
 				<i class="gcis gci-circle-notch gci-spin"></i>
 			</div>
 		</div>
 
 		<div class="ps-avatar ps-avatar--focus ps-focus__avatar ps-page__profile-focus-avatar ps-js-avatar">
-			<img class="ps-js-avatar-image" src="<?php echo $PeepSoPage->get_avatar_url_full(); ?>"
-				alt="<?php printf(__('%s avatar', 'pageso'), $PeepSoPage->get('name')); ?>" />
+			<img class="ps-js-avatar-image" src="<?php echo esc_url($PeepSoPage->get_avatar_url_full()); ?>"
+				alt="<?php printf(esc_attr__('%s avatar', 'pageso'), esc_attr($PeepSoPage->get('name'))); ?>" />
 
 			<?php
 			$avatar_box_attrs = ' style="cursor:default"';
 			if ($PeepSoPage->has_avatar()) {
-				$avatar_box_attrs = ' onclick="peepso.simple_lightbox(\'' . $PeepSoPage->get_avatar_url_orig() . '\'); return false"';
+				$avatar_box_attrs = ' onclick="peepso.simple_lightbox(\'' . esc_js(esc_url($PeepSoPage->get_avatar_url_orig())) . '\'); return false"';
 			}
 			?>
 
@@ -57,14 +63,14 @@ $page_categories_html = array();
 		<?php
 		$cover_box_attrs = '';
 		if ($PeepSoPage->has_cover()) {
-			$cover_box_attrs = ' style="cursor:pointer" data-cover-url="' . $PeepSoPage->get_cover_url() . '"';
+			$cover_box_attrs = ' style="cursor:pointer" data-cover-url="' . esc_attr(esc_url($PeepSoPage->get_cover_url())) . '"';
 		}
 		?>
 
 		<div class="ps-focus__cover-inner ps-js-cover-button-popup" <?php echo $cover_box_attrs ?>>
 			<div class="ps-focus__cover-actions ps-js-page-header-actions ps-js-loading">
 				<button class="ps-focus__cover-action">
-					<img src="<?php echo PeepSo::get_asset('images/ajax-loader.gif') ?>" />
+					<img src="<?php echo esc_url(PeepSo::get_asset('images/ajax-loader.gif')); ?>" />
 				</button>
 			</div>
 		</div>
@@ -111,7 +117,7 @@ $page_categories_html = array();
 		<div class="ps-focus__info">
 			<div class="ps-focus__title">
 				<div class="ps-focus__name">
-					<?php echo $page->name; ?>
+					<?php echo esc_html($page->name); ?>
 				</div>
 				<div class="ps-focus__desc-toggle ps-tip ps-tip--absolute ps-tip--inline ps-tip--bottom ps-js-focus-box-toggle" aria-label="<?php echo __('Show details', 'pageso'); ?>">
 					<i class="gcis gci-info-circle"></i>
@@ -129,7 +135,7 @@ $page_categories_html = array();
 					$description = PeepSo::do_parsedown($description);
 				}
 
-				echo $description;
+				echo wp_kses_post($description);
 
 				?>
 
@@ -140,7 +146,7 @@ $page_categories_html = array();
 							<?php
 
 							foreach ($page_categories as $PeepSoPageCategory) {
-								echo "<a href=\"{$PeepSoPageCategory->get_url()}\">{$PeepSoPageCategory->name}</a>";
+								echo '<a href="' . esc_url($PeepSoPageCategory->get_url()) . '">' . esc_html($PeepSoPageCategory->name) . '</a>';
 							}
 
 							?>
@@ -152,7 +158,7 @@ $page_categories_html = array();
 				<!-- DETAILS -->
 
 				<!-- Members -->
-				<a class="ps-focus__detail" href="<?php echo $page->get_url() . 'members/'; ?>">
+				<a class="ps-focus__detail" href="<?php echo esc_url($page->get_url() . 'members/'); ?>">
 					<i class="pso-i-user-check"></i>
 					<span class="ps-js-member-count"><?php printf(_n('%s follower', '%s followers', $page->members_count, 'pageso'), number_format_i18n($page->members_count)); ?></span>
 				</a>
@@ -160,14 +166,10 @@ $page_categories_html = array();
 			</div>
 			<div class="ps-focus__mobile-actions ps-js-page-header-actions ps-js-loading">
 				<button class="ps-focus__cover-action">
-					<img src="<?php echo PeepSo::get_asset('images/ajax-loader.gif') ?>" />
+					<img src="<?php echo esc_url(PeepSo::get_asset('images/ajax-loader.gif')); ?>" />
 				</button>
 			</div>
 		</div>
-		
-		<div class="bcc-trust-widget">
-    <?php echo do_shortcode('[bcc_trust page_id="' . $page->id . '"]'); ?>
-</div>
 
 		<div class="ps-focus__menu ps-js-focus__menu">
 			<div class="ps-focus__menu-inner ps-js-focus__menu-inner">
@@ -228,10 +230,10 @@ $page_categories_html = array();
 
 						if ($can_access) {
 				?>
-							<a class="ps-focus__menu-item ps-js-item <?php echo ($segment['href'] == $page_segment) ? 'ps-focus__menu-item--active active' : ''; ?>" href="<?php echo $href; ?>" aria-label="<?php echo esc_attr($segment['title']); ?>">
+							<a class="ps-focus__menu-item ps-js-item <?php echo ($segment['href'] == $page_segment) ? 'ps-focus__menu-item--active active' : ''; ?>" href="<?php echo esc_url($href); ?>" aria-label="<?php echo esc_attr(wp_strip_all_tags($segment['title'])); ?>">
 								<div class="ps-focus__menu-item-inner">
-									<i class="<?php echo $segment['icon']; ?>"></i>
-									<span><?php echo $segment['title']; ?></span>
+									<i class="<?php echo esc_attr($segment['icon']); ?>"></i>
+									<span><?php echo wp_kses_post($segment['title']); ?></span>
 								</div>
 							</a>
 				<?php
@@ -256,6 +258,6 @@ $page_categories_html = array();
 
 <script>
 jQuery(function() {
-	peepsopagesdata.page_id = +'<?php echo $page->id ?>';
+	peepsopagesdata.page_id = +<?php echo (int) $page->id; ?>;
 });
 </script>

@@ -1,0 +1,23 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 3,
+    "name": "bcc/tab-dao",
+    "version": "1.0.0",
+    "title": "Tab: DAO",
+    "category": "bcc-pages",
+    "icon": "groups",
+    "description": "DAO profile tab content for a PeepSo Page. Displays governance, treasury, members, and working groups.",
+    "keywords": [ "dao", "tab", "page", "profile" ],
+    "textdomain": "blue-collar-crypto",
+    "attributes": {
+        "pageId": {
+            "type": "number",
+            "default": 0
+        }
+    },
+    "supports": {
+        "html": false
+    },
+    "render": "file:./render.php",
+    "editorScript": "bcc-page-blocks-editor"
+}

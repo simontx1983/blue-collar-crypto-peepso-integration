@@ -22,6 +22,16 @@ define('BCC_URL', plugin_dir_url(__FILE__));
 
 /**
  * ==========================================================
+ * Activation Hook — create DB tables
+ * ==========================================================
+ */
+register_activation_hook(__FILE__, function () {
+    require_once BCC_INCLUDES_PATH . 'core/install.php';
+    bcc_create_tables();
+});
+
+/**
+ * ==========================================================
  * Bootstrap
  * ==========================================================
  */
@@ -62,9 +72,6 @@ function bcc_init() {
     // Register Dashboard Tab
     add_filter('peepso_page_segment_menu_links', 'bcc_register_dashboard_tab');
 
-    // Register Dashboard Renderer
-    add_action('peepso_page_segment_dashboard', 'bcc_render_dashboard_segment', 10, 2);
-
     // Translations
     load_plugin_textdomain(
         'blue-collar-crypto',
@@ -91,20 +98,4 @@ function bcc_register_dashboard_tab($segments) {
     return $segments;
 }
 
-/**
- * ==========================================================
- * Dashboard Renderer
- * ==========================================================
- */
-function bcc_render_dashboard_segment($page_data = null, $url_segments = null) {
-
-    $template = BCC_TEMPLATES_PATH . 'peepso/dashboard.php';
-
-    if (!file_exists($template)) {
-        echo '<p>Dashboard template not found.</p>';
-        return;
-    }
-
-    include $template;
-}
 

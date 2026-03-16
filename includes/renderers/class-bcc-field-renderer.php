@@ -164,18 +164,46 @@ class BCC_Field_Renderer {
 
             case 'url':
                 if (!empty($this->display_value)) {
-                    echo '<a href="' . esc_url($this->display_value) . '" target="_blank">';
+                    echo '<a href="' . esc_url($this->display_value) . '" target="_blank" rel="noopener noreferrer">';
                     echo esc_html($this->display_value);
                     echo '</a>';
+                    echo $this->copy_button_html((string) $this->display_value);
                 } else {
                     echo '—';
                 }
                 break;
 
             default:
-                echo esc_html($this->display_value ?: '—');
+                if (!empty($this->display_value)) {
+                    echo esc_html($this->display_value);
+                    if ($this->is_copyable_field()) {
+                        echo $this->copy_button_html((string) $this->display_value);
+                    }
+                } else {
+                    echo '—';
+                }
                 break;
         }
+    }
+
+    /* ======================================================
+       COPY BUTTON HELPERS
+    ====================================================== */
+
+    private function copy_button_html(string $value): string {
+        if (empty($value)) return '';
+        return '<button type="button" class="bcc-copy-btn" data-copy="' . esc_attr($value) . '" title="Copy to clipboard">'
+             . '<span class="dashicons dashicons-clipboard"></span>'
+             . '</button>';
+    }
+
+    private function is_copyable_field(): bool {
+        $keywords = ['url', 'link', 'address', 'wallet', 'contract', 'rpc', 'token'];
+        $lower    = strtolower($this->field);
+        foreach ($keywords as $kw) {
+            if (str_contains($lower, $kw)) return true;
+        }
+        return false;
     }
 
     /* ======================================================
@@ -222,12 +250,15 @@ class BCC_Field_Renderer {
 
     private function build_data_attributes(): string {
 
+        $raw_value = is_array($this->value) ? implode(', ', array_filter($this->value)) : (string) $this->value;
+
         return sprintf(
-            'data-post="%d" data-field="%s" data-type="%s" data-repeater="%d" data-sub="%s" data-row="%d" data-options="%s"',
+            'data-post="%s" data-field="%s" data-type="%s" data-value="%s" data-repeater="%s" data-sub="%s" data-row="%s" data-options="%s"',
             esc_attr($this->post_id),
             esc_attr($this->field),
             esc_attr($this->type),
-            $this->repeater ? 1 : 0,
+            esc_attr($raw_value),
+            esc_attr($this->repeater ? 1 : 0),
             esc_attr($this->sub),
             esc_attr($this->row),
             esc_attr($this->options)

@@ -1,0 +1,23 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 3,
+    "name": "bcc/tab-validator",
+    "version": "1.0.0",
+    "title": "Tab: Validators",
+    "category": "bcc-pages",
+    "icon": "shield",
+    "description": "Validator profile tab content for a PeepSo Page. Displays staking info, on-chain stats, and chain cards.",
+    "keywords": [ "validator", "tab", "page", "profile" ],
+    "textdomain": "blue-collar-crypto",
+    "attributes": {
+        "pageId": {
+            "type": "number",
+            "default": 0
+        }
+    },
+    "supports": {
+        "html": false
+    },
+    "render": "file:./render.php",
+    "editorScript": "bcc-page-blocks-editor"
+}

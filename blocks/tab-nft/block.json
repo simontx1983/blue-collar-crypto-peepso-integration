@@ -1,0 +1,23 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 3,
+    "name": "bcc/tab-nft",
+    "version": "1.0.0",
+    "title": "Tab: NFT",
+    "category": "bcc-pages",
+    "icon": "format-image",
+    "description": "NFT profile tab content for a PeepSo Page. Displays artist info, stats, and collections.",
+    "keywords": [ "nft", "tab", "page", "profile" ],
+    "textdomain": "blue-collar-crypto",
+    "attributes": {
+        "pageId": {
+            "type": "number",
+            "default": 0
+        }
+    },
+    "supports": {
+        "html": false
+    },
+    "render": "file:./render.php",
+    "editorScript": "bcc-page-blocks-editor"
+}

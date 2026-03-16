@@ -1,0 +1,32 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 3,
+    "name": "bcc/page-header",
+    "version": "1.0.0",
+    "title": "Page Header",
+    "category": "bcc-pages",
+    "icon": "cover-image",
+    "description": "PeepSo Page header with project avatar, cover image, name, owner, trust score, and followers.",
+    "keywords": [ "page", "header", "cover", "avatar", "peepso" ],
+    "textdomain": "blue-collar-crypto",
+    "attributes": {
+        "pageId": {
+            "type": "number",
+            "default": 0
+        },
+        "showTrustScore": {
+            "type": "boolean",
+            "default": true
+        },
+        "showFollowers": {
+            "type": "boolean",
+            "default": true
+        }
+    },
+    "supports": {
+        "html": false,
+        "align": [ "wide", "full" ]
+    },
+    "render": "file:./render.php",
+    "editorScript": "bcc-page-blocks-editor"
+}

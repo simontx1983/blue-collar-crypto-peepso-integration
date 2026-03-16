@@ -16,6 +16,12 @@ function bcc_enqueue_assets() {
         return;
     }
 
+    // Only load on PeepSo Pages (rendered via [peepso_pages] shortcode on a regular WP page)
+    global $post;
+    if (!$post || !has_shortcode($post->post_content ?? '', 'peepso_pages')) {
+        return;
+    }
+
     $base_css = plugin_dir_url(__FILE__) . '../../assets/css/';
     $base_js  = plugin_dir_url(__FILE__) . '../../assets/js/';
     
@@ -37,14 +43,11 @@ function bcc_enqueue_assets() {
        SCRIPTS - SINGLE CONSOLIDATED FILE
     ----------------------------------------- */
 
-    // Make sure media library is loaded first
-    wp_enqueue_media();
-
     // Single consolidated JS file
     wp_enqueue_script(
         'bcc-all',
-        $base_js . 'bcc-all.js', // Rename the file I gave you to this
-        ['jquery', 'media-views'], // Dependencies
+        $base_js . 'bcc-all.js',
+        ['jquery'],
         $version,
         true
     );

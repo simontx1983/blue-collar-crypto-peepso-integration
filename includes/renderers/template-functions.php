@@ -41,77 +41,103 @@ if (!function_exists('bcc_render_rows')) {
     }
 }
 
-/**
- * NEW: NFT Collections renderer - Grid layout with gallery at top
- */
-if (!function_exists('bcc_render_nft_collections')) {
-    function bcc_render_nft_collections(array $args = []): void {
-        if (class_exists('BCC_NFT_Repeater_Renderer')) {
-            BCC_NFT_Repeater_Renderer::render($args);
-        } else {
-            echo '<p>NFT Collections renderer not available. Please check that class-bcc-nft-repeater-renderer.php is loaded.</p>';
+if ( ! function_exists( 'bcc_get_source_registry' ) ) {
+    /**
+     * Source registry for data-source badges.
+     *
+     * Each key maps to an icon (HTML entity), a human-readable label,
+     * and a CSS modifier class. New verification sources (api, manual,
+     * kyc, etc.) are added here — no template changes needed.
+     *
+     * @return array<string, array{icon: string, label: string, class: string}>
+     */
+    function bcc_get_source_registry(): array {
+        static $registry = null;
+
+        if ( null === $registry ) {
+            $registry = [
+                'user' => [
+                    'icon'  => '&#x270F;&#xFE0E;',
+                    'label' => 'User-submitted',
+                    'class' => 'bcc-source-badge--user',
+                ],
+                'onchain' => [
+                    'icon'  => '&#x1f517;',
+                    'label' => 'Verified &middot; On-chain',
+                    'class' => 'bcc-source-badge--onchain',
+                ],
+                'api' => [
+                    'icon'  => '&#x1F310;',
+                    'label' => 'Verified &middot; API',
+                    'class' => 'bcc-source-badge--api',
+                ],
+                'manual' => [
+                    'icon'  => '&#x2714;&#xFE0E;',
+                    'label' => 'Manually Verified',
+                    'class' => 'bcc-source-badge--manual',
+                ],
+            ];
         }
+
+        return $registry;
     }
 }
 
-/**
- * NEW: Validator Chains renderer - Horizontal slider with stats
- */
-if (!function_exists('bcc_render_validator_chains')) {
-    function bcc_render_validator_chains(array $args = []): void {
-        if (class_exists('BCC_Validator_Repeater_Renderer')) {
-            BCC_Validator_Repeater_Renderer::render($args);
-        } else {
-            echo '<p>Validator Chains renderer not available. Please check that class-bcc-validator-repeater-renderer.php is loaded.</p>';
+if ( ! function_exists( 'bcc_render_source_badge' ) ) {
+    /**
+     * Render a data-source badge pill.
+     *
+     * Uses the central source registry so every badge is consistent.
+     * Falls back silently if the source type is unknown.
+     *
+     * @param string $source Registry key: 'user', 'onchain', 'api', 'manual', etc.
+     */
+    function bcc_render_source_badge( string $source = 'user' ): void {
+        $registry = bcc_get_source_registry();
+
+        if ( ! isset( $registry[ $source ] ) ) {
+            return; // Unknown source — fail silently.
         }
+
+        $entry = $registry[ $source ];
+
+        $allowed_html = [
+            'span' => [ 'class' => [] ],
+        ];
+
+        printf(
+            '<span class="bcc-source-badge %s"><span class="bcc-source-badge__icon">%s</span> %s</span>',
+            esc_attr( $entry['class'] ),
+            wp_kses( $entry['icon'], $allowed_html ),
+            wp_kses( $entry['label'], $allowed_html )
+        );
     }
 }
 
-/**
- * Updated: Keep old function for backward compatibility
- * Now auto-detects which renderer to use based on post type
- */
+if (!function_exists('bcc_section_header')) {
+    /**
+     * Render a section header with a data-source badge.
+     *
+     * Outputs the .bcc-section-head wrapper, the <h3>, and the badge
+     * in one call so templates stay clean.
+     *
+     * @param string $title  Section title (will be escaped).
+     * @param string $source Registry key: 'user', 'onchain', 'api', 'manual'.
+     */
+    function bcc_section_header(string $title, string $source = 'user'): void {
+        echo '<div class="bcc-section-head">';
+        printf('<h3 class="bcc-section-title">%s</h3>', esc_html($title));
+        bcc_render_source_badge($source);
+        echo '</div>';
+    }
+}
+
 if (!function_exists('bcc_render_repeater_slider')) {
     function bcc_render_repeater_slider(array $args = []): void {
-        // Try to detect which renderer to use
-        $post_id = $args['post_id'] ?? 0;
-        $post_type = $post_id ? get_post_type($post_id) : '';
-        
-        // For NFT post type, use the new NFT renderer
-        if ($post_type === 'nft' && class_exists('BCC_NFT_Repeater_Renderer')) {
-            BCC_NFT_Repeater_Renderer::render($args);
-        } 
-        // For Validator post type, use the new Validator renderer
-        elseif ($post_type === 'validators' && class_exists('BCC_Validator_Repeater_Renderer')) {
-            BCC_Validator_Repeater_Renderer::render($args);
-        }
-        // Fallback to original renderer
-        elseif (class_exists('BCC_Repeater_Renderer')) {
+        if (class_exists('BCC_Repeater_Renderer')) {
             BCC_Repeater_Renderer::render($args);
-        }
-        // Ultimate fallback
-        else {
+        } else {
             echo '<p>Repeater renderer not available.</p>';
         }
-    }
-}
-
-if (!function_exists('bcc_get_repeater_count')) {
-    function bcc_get_repeater_count(int $post_id, string $repeater_key): int {
-        $post_type = get_post_type($post_id);
-        
-        if ($post_type === 'nft' && class_exists('BCC_NFT_Repeater_Renderer')) {
-            return BCC_NFT_Repeater_Renderer::get_count($post_id, $repeater_key);
-        } elseif (class_exists('BCC_Repeater_Renderer')) {
-            return BCC_Repeater_Renderer::get_count($post_id, $repeater_key);
-        }
-        
-        return 0;
-    }
-}
-
-if (!function_exists('bcc_repeater_has_rows')) {
-    function bcc_repeater_has_rows(int $post_id, string $repeater_key): bool {
-        return bcc_get_repeater_count($post_id, $repeater_key) > 0;
     }
 }

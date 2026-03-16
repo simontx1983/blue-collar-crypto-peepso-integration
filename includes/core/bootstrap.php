@@ -7,6 +7,28 @@ if (defined('BCC_BOOTSTRAP_LOADED')) {
 define('BCC_BOOTSTRAP_LOADED', true);
 
 /* ======================================================
+   CATEGORY → CPT MAP (single source of truth)
+====================================================== */
+
+if (!function_exists('bcc_get_category_map')) {
+    /**
+     * Maps PeepSo page category IDs to shadow CPT slugs.
+     * Used by: sync engine, repair tool, dashboard tabs.
+     *
+     * Filterable so themes/other plugins can extend.
+     */
+    function bcc_get_category_map(): array {
+        return apply_filters('bcc_category_map', [
+            254 => ['cpt' => 'validators', 'label' => 'Validators'],
+            268 => ['cpt' => 'builder',    'label' => 'Builder'],
+            269 => ['cpt' => 'builder',    'label' => 'Builder'],
+            253 => ['cpt' => 'nft',        'label' => 'NFT'],
+            1901 => ['cpt' => 'dao',        'label' => 'DAO'],
+        ]);
+    }
+}
+
+/* ======================================================
    CORE
 ====================================================== */
 
@@ -34,6 +56,7 @@ require_once BCC_INCLUDES_PATH . 'sync/page-to-cpt-sync.php';
    AJAX CONTROLLERS
 ====================================================== */
 
+require_once BCC_INCLUDES_PATH . 'helpers/class-bcc-ajax-security.php';
 require_once BCC_INCLUDES_PATH . 'ajax/class-bcc-ajax-inline.php';
 require_once BCC_INCLUDES_PATH . 'ajax/class-bcc-ajax-visibility.php';
 require_once BCC_INCLUDES_PATH . 'ajax/class-bcc-ajax-gallery.php';
@@ -59,6 +82,11 @@ require_once BCC_INCLUDES_PATH . 'helpers/class-bcc-options-helper.php';
 
 require_once BCC_INCLUDES_PATH . 'peepso/segments.php';
 
+/* ======================================================
+   GUTENBERG BLOCKS
+====================================================== */
+
+require_once BCC_INCLUDES_PATH . 'blocks.php';
 
 /* ======================================================
    UI

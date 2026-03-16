@@ -1,0 +1,24 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 3,
+    "name": "bcc/page-tabs",
+    "version": "1.0.0",
+    "title": "Page Tabs Navigation",
+    "category": "bcc-pages",
+    "icon": "menu",
+    "description": "Tab navigation for PeepSo Page profile sections. Renders tabs based on page categories.",
+    "keywords": [ "tabs", "navigation", "page", "peepso" ],
+    "textdomain": "blue-collar-crypto",
+    "attributes": {
+        "pageId": {
+            "type": "number",
+            "default": 0
+        }
+    },
+    "supports": {
+        "html": false,
+        "align": [ "wide", "full" ]
+    },
+    "render": "file:./render.php",
+    "editorScript": "bcc-page-blocks-editor"
+}

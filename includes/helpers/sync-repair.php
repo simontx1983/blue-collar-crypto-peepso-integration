@@ -20,6 +20,36 @@ function bcc_repair_engine($page_id = null) {
     $log = [];
 
     /* ----------------------------
+       Verify relation table exists
+    ---------------------------- */
+
+    if (function_exists('bcc_find_peepso_relation_table')) {
+        [$rel_table, $rel_page_col, $rel_cat_col] = bcc_find_peepso_relation_table();
+    } else {
+        $rel_table = $wpdb->prefix . 'peepso_page_categories';
+        if (!$wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $rel_table))) {
+            $rel_table = null;
+        }
+        $rel_page_col = 'pm_page_id';
+        $rel_cat_col  = 'pm_cat_id';
+    }
+
+    // Validate table and column names contain only safe characters
+    if ($rel_table && !preg_match('/^[a-zA-Z0-9_]+$/', $rel_table)) {
+        $rel_table = null;
+    }
+    if ($rel_page_col && !preg_match('/^[a-zA-Z0-9_]+$/', $rel_page_col)) {
+        $rel_page_col = null;
+    }
+    if ($rel_cat_col && !preg_match('/^[a-zA-Z0-9_]+$/', $rel_cat_col)) {
+        $rel_cat_col = null;
+    }
+
+    if (!$rel_table) {
+        return ['error' => 'PeepSo Pages relation table not found. Is the PeepSo Pages plugin active?'];
+    }
+
+    /* ----------------------------
        Fetch pages
     ---------------------------- */
 
@@ -39,6 +69,7 @@ function bcc_repair_engine($page_id = null) {
             'post_type'      => 'peepso-page',
             'posts_per_page' => -1,
             'post_status'    => 'publish',
+            'no_found_rows'  => true,
         ]);
     }
 
@@ -48,9 +79,9 @@ function bcc_repair_engine($page_id = null) {
 
         $cat_ids = $wpdb->get_col(
             $wpdb->prepare(
-                "SELECT pm_cat_id 
-                 FROM {$wpdb->prefix}peepso_page_categories 
-                 WHERE pm_page_id = %d",
+                "SELECT {$rel_cat_col}
+                 FROM {$rel_table}
+                 WHERE {$rel_page_col} = %d",
                 $page->ID
             )
         );
@@ -64,11 +95,11 @@ function bcc_repair_engine($page_id = null) {
 
         foreach ($cat_ids as $cat_id) {
 
-            if (!isset($map[$cat_id]['cpt'])) {
+            if (!isset($map[(int) $cat_id]['cpt'])) {
                 continue;
             }
 
-            $cpt = $map[$cat_id]['cpt'];
+            $cpt = $map[(int) $cat_id]['cpt'];
 
             /* ----------------------------
                Find existing shadow CPT
@@ -80,6 +111,7 @@ function bcc_repair_engine($page_id = null) {
                 'meta_value'     => $page->ID,
                 'posts_per_page' => 1,
                 'fields'         => 'ids',
+                'no_found_rows'  => true,
             ]);
 
             if ($existing) {
@@ -104,21 +136,14 @@ function bcc_repair_engine($page_id = null) {
                    Create missing CPT
                 ---------------------------- */
 
-                $cpt_id = wp_insert_post([
-                    'post_type'   => $cpt,
-                    'post_title'  => $page->post_title,
-                    'post_status' => 'publish',
-                    'post_author' => $page->post_author,
-                ]);
+                $cpt_id = BCC_Domain_Abstract::create_from_page_by_type($page->ID, $cpt);
 
-                if (!$cpt_id || is_wp_error($cpt_id)) {
+                if (!$cpt_id) {
                     $log[] = "  ❌ Failed creating {$cpt}";
                     continue;
                 }
 
-                update_post_meta($cpt_id, '_peepso_page_id', $page->ID);
                 update_post_meta($cpt_id, '_peepso_cat_id', $cat_id);
-                update_post_meta($cpt_id, '_bcc_visibility', 'public');
 
                 $log[] = "  ✅ Created {$cpt} ({$cpt_id})";
             }
@@ -176,22 +201,45 @@ function bcc_render_repair_page() {
 
     echo '<div class="wrap"><h1>BCC Repair Tool</h1>';
 
+    if (!function_exists('bcc_get_category_map')) {
+        echo '<div class="notice notice-error" style="padding:12px;">'
+           . '<strong>Repair tool unavailable:</strong> <code>bcc_get_category_map()</code> is not defined. '
+           . 'This function must be implemented in <code>includes/helpers/sync-repair.php</code> (or included from another file) '
+           . 'before the repair tool can run. It should return an array mapping PeepSo category IDs to CPT slugs, e.g.:<br><br>'
+           . '<code>[ 254 => [\'cpt\' => \'validators\'], 268 => [\'cpt\' => \'builder\'], ... ]</code>'
+           . '</div></div>';
+        return;
+    }
+
     if (isset($_POST['bcc_run_repair'])) {
+
+        if (!wp_verify_nonce($_POST['_wpnonce'] ?? '', 'bcc_run_repair')) {
+            echo '<div class="notice notice-error"><p>Security check failed.</p></div></div>';
+            return;
+        }
 
         $page_id = !empty($_POST['bcc_page_id'])
             ? absint($_POST['bcc_page_id'])
             : null;
 
-        echo '<pre style="background:#111;color:#0f0;padding:15px;">';
-        foreach (bcc_repair_engine($page_id) as $line) {
-            echo esc_html($line) . "\n";
+        $result = bcc_repair_engine($page_id);
+
+        if (isset($result['error'])) {
+            echo '<div class="notice notice-error" style="padding:12px;"><strong>Error:</strong> '
+               . esc_html($result['error']) . '</div>';
+        } else {
+            echo '<pre style="background:#111;color:#0f0;padding:15px;">';
+            foreach ($result as $line) {
+                echo esc_html($line) . "\n";
+            }
+            echo "</pre>";
         }
-        echo "</pre>";
 
     } else {
 
-        echo '<form method="post">
-                <p>Optional: Repair single PeepSo Page ID</p>
+        echo '<form method="post">';
+        wp_nonce_field('bcc_run_repair');
+        echo '  <p>Optional: Repair single PeepSo Page ID</p>
                 <input type="number" name="bcc_page_id" />
                 <p>
                     <button class="button button-primary" name="bcc_run_repair">

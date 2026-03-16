@@ -104,6 +104,46 @@ abstract class BCC_Domain_Abstract {
     }
 
     /* ======================================================
+       DOMAIN CLASS RESOLVER
+    ====================================================== */
+
+    private static array $domain_map = [
+        'validators' => 'BCC_Domain_Validator',
+        'nft'        => 'BCC_Domain_NFT',
+        'builder'    => 'BCC_Domain_Builder',
+        'dao'        => 'BCC_Domain_DAO',
+    ];
+
+    /**
+     * Resolve a CPT slug to its domain class name.
+     */
+    public static function resolve(string $post_type): ?string {
+        return self::$domain_map[$post_type] ?? null;
+    }
+
+    /**
+     * Resolve domain class for a given post ID.
+     */
+    public static function get_domain_for_post(int $post_id): ?string {
+        $type = get_post_type($post_id);
+        if (!$type) return null;
+        $class = self::resolve($type);
+        return ($class && class_exists($class)) ? $class : null;
+    }
+
+    /**
+     * Create a shadow CPT from a page using the correct domain subclass.
+     * Returns the new CPT ID, or 0 on failure.
+     */
+    public static function create_from_page_by_type(int $page_id, string $post_type): int {
+        $class = self::resolve($post_type);
+        if (!$class || !class_exists($class)) {
+            return 0;
+        }
+        return $class::create_from_page($page_id);
+    }
+
+    /* ======================================================
        PERMISSIONS
     ====================================================== */
 

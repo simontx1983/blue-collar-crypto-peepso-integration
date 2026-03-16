@@ -22,16 +22,7 @@ class BCC_Ajax_Inline {
      * Resolve domain class by post type
      */
     private static function get_domain_class(int $post_id): string {
-
-        $type = get_post_type($post_id);
-
-        return match ($type) {
-            'nft'        => 'BCC_Domain_NFT',
-            'validators' => 'BCC_Domain_Validator',
-            'builder'    => 'BCC_Domain_Builder',
-            'dao'        => 'BCC_Domain_DAO',
-            default      => ''
-        };
+        return BCC_Domain_Abstract::get_domain_for_post($post_id) ?? '';
     }
 
     /**
@@ -58,7 +49,24 @@ class BCC_Ajax_Inline {
         $value    = wp_unslash($_POST['value'] ?? '');
         $type     = sanitize_text_field($_POST['type'] ?? 'text');
 
-        $repeater = intval($_POST['repeater'] ?? 0);
+        // Sanitize value based on field type
+        switch ($type) {
+            case 'wysiwyg':
+                $value = wp_kses_post($value);
+                break;
+
+            case 'url':
+                $value = esc_url_raw($value);
+                break;
+
+            case 'text':
+            case 'select':
+            default:
+                $value = sanitize_text_field($value);
+                break;
+        }
+
+        $repeater = absint($_POST['repeater'] ?? 0);
         $row      = absint($_POST['row'] ?? 0);
         $sub      = sanitize_text_field($_POST['sub'] ?? '');
 
@@ -86,16 +94,17 @@ class BCC_Ajax_Inline {
 
         $domain = self::get_domain_class($post_id);
 
-        if ($domain && class_exists($domain)) {
+        if (!$domain || !class_exists($domain)) {
+            wp_send_json_error('Unsupported post type');
+        }
 
-            if (!call_user_func([$domain, 'is_valid_field'], $field)) {
-                wp_send_json_error('Invalid field');
-            }
+        if (!call_user_func([$domain, 'is_valid_field'], $field)) {
+            wp_send_json_error('Invalid field');
+        }
 
-            if ($repeater && $sub && $sub !== 'add_new') {
-                if (!call_user_func([$domain, 'is_valid_subfield'], $field, $sub)) {
-                    wp_send_json_error('Invalid sub field');
-                }
+        if ($repeater && $sub && $sub !== 'add_new') {
+            if (!call_user_func([$domain, 'is_valid_subfield'], $field, $sub)) {
+                wp_send_json_error('Invalid sub field');
             }
         }
 

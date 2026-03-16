@@ -8,7 +8,9 @@ if (!isset($page) || !is_object($page) || empty($page->id)) {
 
 $user_id = get_current_user_id();
 if (!$user_id) {
-    peepso_require_login();
+    if (function_exists('peepso_require_login')) {
+        peepso_require_login();
+    }
     return;
 }
 
@@ -29,29 +31,17 @@ $category_ids = $wpdb->get_col(
     )
 );
 
-$category_tabs = [
-    'validators' => 'Validators',
-    'builder'    => 'Builder',
-    'nft'        => 'NFT',
-    'dao'        => 'DAO',
-];
-
-$category_tab_map = [
-    254 => 'validators',
-    268 => 'builder',
-    269 => 'builder',
-    253 => 'nft',
-    270 => 'dao',
-];
+$category_map = function_exists('bcc_get_category_map') ? bcc_get_category_map() : [];
 
 $tabs = [];
 
 foreach ($category_ids as $cat_id) {
-    if (isset($category_tab_map[$cat_id])) {
-        $key = $category_tab_map[$cat_id];
+    if (isset($category_map[(int) $cat_id])) {
+        $entry = $category_map[(int) $cat_id];
+        $key   = $entry['cpt'];
 
         if (!isset($tabs[$key])) {
-            $tabs[$key] = $category_tabs[$key];
+            $tabs[$key] = $entry['label'];
         }
     }
 }
@@ -96,28 +86,20 @@ $tab_files = [
 ];
 
 if (isset($tab_files[$active_tab]) && file_exists($tab_files[$active_tab])) {
-
-    switch ($active_tab) {
-
-        case 'nft':
-            $nft_id = function_exists('bcc_get_nft_id') ? bcc_get_nft_id($page->id) : 0;
-            break;
-
-        case 'validators':
-            $validator_id = function_exists('bcc_get_validator_id') ? bcc_get_validator_id($page->id) : 0;
-            break;
-
-        case 'builder':
-            $builder_id = function_exists('bcc_get_builder_id') ? bcc_get_builder_id($page->id) : 0;
-            break;
-
-        case 'dao':
-            $dao_id = function_exists('bcc_get_dao_id') ? bcc_get_dao_id($page->id) : 0;
-            break;
-    }
-
     include $tab_files[$active_tab];
 }
 
 ?>
+</div>
+
+<div id="bcc-visibility-popover" style="display:none;">
+  <div class="bcc-vis-option" data-value="public">
+    <span>🌍</span> Public
+  </div>
+  <div class="bcc-vis-option" data-value="members">
+    <span>👥</span> Members
+  </div>
+  <div class="bcc-vis-option" data-value="private">
+    <span>🔒</span> Private
+  </div>
 </div>

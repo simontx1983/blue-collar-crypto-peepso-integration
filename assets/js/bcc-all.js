@@ -8,6 +8,15 @@
     const DEBUG_MODE = false; // Set to false for production
 
     /* ======================================================
+       HTML ESCAPE HELPER
+    ====================================================== */
+    function escHtml(str) {
+        const div = document.createElement('div');
+        div.appendChild(document.createTextNode(String(str)));
+        return div.innerHTML;
+    }
+
+    /* ======================================================
        TOAST NOTIFICATION SYSTEM
     ====================================================== */
     window.bccToast = function(msg, type = "success", duration = 2200) {
@@ -109,6 +118,44 @@
         }, data));
     };
 
+    function initDashboardTabs() {
+        $('[data-bcc-dashboard-tabs]').each(function() {
+            const $nav = $(this);
+            const $inner = $nav.find('.bcc-dashboard-tabs-inner');
+            const $active = $inner.find('.bcc-tab.active').first();
+
+            if (!$inner.length) return;
+
+            const updateOverflowState = function() {
+                const el = $inner.get(0);
+                if (!el) return;
+
+                const isScrollable = el.scrollWidth > el.clientWidth + 4;
+                $nav.toggleClass('is-scrollable', isScrollable);
+                $nav.toggleClass('is-at-start', !isScrollable || el.scrollLeft <= 4);
+                $nav.toggleClass('is-at-end', !isScrollable || (el.scrollLeft + el.clientWidth) >= (el.scrollWidth - 4));
+            };
+
+            updateOverflowState();
+            $inner.off('scroll.bccTabs').on('scroll.bccTabs', updateOverflowState);
+
+            if ($active.length && window.innerWidth <= 768) {
+                const innerEl = $inner.get(0);
+                const activeEl = $active.get(0);
+
+                if (innerEl && activeEl) {
+                    const offset = activeEl.offsetLeft - ((innerEl.clientWidth - activeEl.offsetWidth) / 2);
+                    innerEl.scrollTo({
+                        left: Math.max(0, offset),
+                        behavior: 'smooth'
+                    });
+                }
+            }
+
+            $(window).off('resize.bccTabs').on('resize.bccTabs', updateOverflowState);
+        });
+    }
+
     /* ======================================================
        GALLERY SLIDER
     ====================================================== */
@@ -169,6 +216,26 @@
                 const index = $(this).data('index');
                 showSlide(index);
             });
+
+            // Touch/swipe support for mobile
+            (function() {
+                let touchStartX = 0;
+                let touchStartY = 0;
+
+                $wrap[0].addEventListener('touchstart', function(e) {
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                }, { passive: true });
+
+                $wrap[0].addEventListener('touchend', function(e) {
+                    const dx = e.changedTouches[0].clientX - touchStartX;
+                    const dy = e.changedTouches[0].clientY - touchStartY;
+                    // Only trigger on a dominant horizontal swipe of 40+ px
+                    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 40) {
+                        showSlide(dx < 0 ? currentIndex + 1 : currentIndex - 1);
+                    }
+                }, { passive: true });
+            })();
         });
     };
 
@@ -392,6 +459,8 @@
             post_id: postId,
             row: row,
             order: ids
+        }).fail(function() {
+            window.bccToast('Failed to save image order', 'error');
         });
     }
 
@@ -426,6 +495,7 @@
                 });
 
                 initDragSort($container, postId, row);
+            }).always(function() {
                 $strip.data('loading', false);
             });
         });
@@ -453,89 +523,70 @@
         
         $container.off('click.bcc', '.bcc-bulk-delete').on('click.bcc', '.bcc-bulk-delete', function(e) {
             e.preventDefault();
-            
-            const $btn = $(this);
-            const postId = parseInt($container.data('post'), 10);
-            const row = parseInt($container.data('row'), 10);
-            
+
+            const $btn            = $(this);
+            const postId          = parseInt($container.data('post'), 10);
+            const row             = parseInt($container.data('row'), 10);
+            const $selectedThumbs = $container.find('.bcc-thumb-select:checked').closest('.bcc-gallery-thumb-wrapper');
+
             if (!postId) {
                 window.bccToast('Missing post ID', 'error');
                 return;
             }
-            
-            const $selected = $container.find('.bcc-thumb-select:checked');
-            const $selectedThumbs = $selected.closest('.bcc-gallery-thumb-wrapper');
-            
+
             if (!$selectedThumbs.length) {
                 window.bccToast('No images selected', 'error');
                 return;
             }
-            
+
             if (!confirm('Delete ' + $selectedThumbs.length + ' selected image(s)?')) {
                 return;
             }
-            
-            $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spinning"></span> Deleting...');
-            
-            let deletedCount = 0;
-            let totalToDelete = $selectedThumbs.length;
-            let failedDeletions = [];
-            
+
+            // Collect all IDs and send a single batch request
+            const imageIds = [];
             $selectedThumbs.each(function() {
-                const $thumb = $(this);
-                const imageId = parseInt($thumb.data('id'), 10);
-                
-                if (!imageId) {
-                    deletedCount++;
-                    $thumb.remove();
-                    checkComplete();
-                    return;
-                }
-                
-                window.bccPost('bcc_delete_gallery_image', {
-                    post_id: postId,
-                    row: row,
-                    image_id: imageId
-                })
-                .done(function(res) {
-                    if (res && res.success) {
-                        $thumb.remove();
-                    } else {
-                        failedDeletions.push(imageId);
-                    }
-                })
-                .fail(function() {
-                    failedDeletions.push(imageId);
-                })
-                .always(function() {
-                    deletedCount++;
-                    checkComplete();
-                });
+                const id = parseInt($(this).data('id'), 10);
+                if (id) imageIds.push(id);
             });
-            
-            function checkComplete() {
-                if (deletedCount === totalToDelete) {
+
+            $btn.prop('disabled', true).html('<span class="dashicons dashicons-update spinning"></span> Deleting...');
+
+            window.bccPost('bcc_bulk_delete_gallery_images', {
+                post_id:   postId,
+                row:       row,
+                image_ids: imageIds
+            })
+            .done(function(res) {
+                if (res && res.success) {
+                    $selectedThumbs.fadeOut(250, function() { $(this).remove(); });
                     refreshMainSlider($container, postId, row);
                     updateCount($container);
-                    
-                    $btn.prop('disabled', false).text('Delete Selected');
                     $container.find('.bcc-gallery-thumb-wrapper').removeClass('bcc-gallery-thumb-selecting');
-                    
-                    if (failedDeletions.length > 0) {
-                        window.bccToast(failedDeletions.length + ' image(s) could not be deleted', 'error');
+
+                    if (res.data.failed && res.data.failed.length) {
+                        window.bccToast(res.data.failed.length + ' image(s) could not be deleted', 'error');
                     } else {
                         window.bccToast('Images deleted successfully');
                     }
+                } else {
+                    window.bccToast(res?.data?.message || 'Bulk delete failed', 'error');
                 }
-            }
+            })
+            .fail(function() {
+                window.bccToast('Bulk delete failed - server error', 'error');
+            })
+            .always(function() {
+                $btn.prop('disabled', false).text('Delete Selected');
+            });
         });
     }
 
     function appendThumb($container, img) {
         const html = `
-            <div class="bcc-gallery-thumb-wrapper" draggable="true" data-id="${img.id}">
+            <div class="bcc-gallery-thumb-wrapper" draggable="true" data-id="${parseInt(img.id, 10) || 0}">
                 <input type="checkbox" class="bcc-thumb-select">
-                <img src="${img.thumbnail || img.url}" loading="lazy" alt="">
+                <img src="${escHtml(img.thumbnail || img.url)}" loading="lazy" alt="">
                 <span class="bcc-gallery-remove">×</span>
             </div>
         `;
@@ -568,7 +619,7 @@
             images.forEach(function(img, index) {
                 const activeClass = index === 0 ? 'active' : '';
                 sliderHtml += `<div class="bcc-slider-item ${activeClass}">`;
-                sliderHtml += `<img src="${img.url}" loading="lazy" alt="">`;
+                sliderHtml += `<img src="${escHtml(img.url)}" loading="lazy" alt="">`;
                 sliderHtml += '</div>';
             });
 
@@ -605,6 +656,7 @@
             nonce: bcc_ajax.nonce,
             post_id: $el.data("post"),
             field: $el.data("field"),
+            type: $el.data("type") || "text",
             value: value
         };
 
@@ -712,22 +764,27 @@
         $.post(bcc_ajax.ajax_url, buildPayload($span, val))
             .done(function (res) {
                 if (!res || res.success !== true) {
-                    window.bccToast(res?.data?.message || "Save failed", "error");
+                    const msg = (typeof res?.data === 'string') ? res.data : (res?.data?.message || "Save failed");
+                    window.bccToast(msg, "error");
                     cancelEdit($span);
                     return;
                 }
 
                 $span.attr("data-value", val);
 
+                // Use the server-sanitized value for display
+                var serverVal = res.data && res.data.value !== undefined ? res.data.value : val;
+
                 if ($span.hasClass("bcc-inline-select")) {
                     const map = window.bccParseOptions($span.data("options") || "");
-                    const label = map[val] || val || "—";
+                    const label = map[serverVal] || serverVal || "—";
                     $span.text(label);
                 } else {
                     if ($span.find("textarea").length || $span.data("type") === "wysiwyg") {
-                        $span.html(val || "");
+                        // Server value is sanitized with wp_kses_post
+                        $span.html(serverVal || "");
                     } else {
-                        $span.text(val || "—");
+                        $span.text(serverVal || "—");
                     }
                 }
 
@@ -782,7 +839,10 @@
             });
         });
 
-        $container.on('dragstart', '.bcc-slide', function(e) {
+        // Remove any previously bound drag handlers to prevent stacking
+        $container.off('.bccRepeaterDrag');
+
+        $container.on('dragstart.bccRepeaterDrag', '.bcc-slide', function(e) {
             // Only allow drag if starting from the handle
             if (!$(e.target).closest('.bcc-drag-handle').length) {
                 e.preventDefault();
@@ -805,7 +865,7 @@
             e.stopPropagation();
         });
 
-        $container.on('dragover', '.bcc-slide', function(e) {
+        $container.on('dragover.bccRepeaterDrag', '.bcc-slide', function(e) {
             e.preventDefault();
             e.stopPropagation();
             
@@ -821,7 +881,7 @@
             }
         });
 
-        $container.on('dragend', '.bcc-slide', function() {
+        $container.on('dragend.bccRepeaterDrag', '.bcc-slide', function() {
             $(this).removeClass('is-dragging').attr('draggable', false);
             
             if (draggedRow && dragStarted) {
@@ -835,7 +895,7 @@
         });
 
         // Prevent default on container
-        $container.on('dragover dragenter dragleave drop', function(e) {
+        $container.on('dragover.bccRepeaterDrag dragenter.bccRepeaterDrag dragleave.bccRepeaterDrag drop.bccRepeaterDrag', function(e) {
             e.preventDefault();
             e.stopPropagation();
         });
@@ -846,12 +906,14 @@
         const $btn = $wrapper.find('.bcc-add-repeater');
         const postId = $btn.data('post');
         const field = $btn.data('field');
-        
+
         if (!postId || !field) return;
 
+        // Collect OLD data-row values (DB indices) in the NEW visual order,
+        // then update DOM attributes to reflect the new sequential order.
         const order = [];
         $container.find('.bcc-slide').each(function(index) {
-            order.push(index);
+            order.push(parseInt($(this).data('row'), 10));
             $(this).attr('data-row', index);
             $(this).find('.bcc-delete-repeater').attr('data-row', index);
         });
@@ -1036,11 +1098,8 @@
         const postId = $btn.data('post');
         const field = $btn.data('field');
         const rowIndex = $btn.data('row');
-        
-        console.log('🗑️ Repeater row delete clicked:', { postId, field, rowIndex });
 
         if (!postId || !field || rowIndex === undefined) {
-            console.error('❌ Missing repeater data:', { postId, field, rowIndex });
             window.bccToast('Missing data', 'error');
             return;
         }
@@ -1056,7 +1115,6 @@
         // Find the slide container
         const $slide = $btn.closest('.bcc-slide');
         if (!$slide.length) {
-            console.error('❌ Could not find slide container');
             window.bccToast('Error: Could not find row container', 'error');
             return;
         }
@@ -1079,15 +1137,14 @@
             dataType: 'json'
         })
         .done(function(res) {
-            console.log('✅ Repeater row delete response:', res);
-            
             if (res && res.success) {
                 // Remove the entire slide with animation
+                var $parent = $slide.parent();
                 $slide.fadeOut(300, function() {
                     $(this).remove();
-                    
-                    // Update data-row attributes for remaining rows
-                    $('.bcc-slide').each(function(index) {
+
+                    // Update data-row attributes for remaining rows (scoped to parent)
+                    $parent.find('.bcc-slide').each(function(index) {
                         $(this).attr('data-row', index);
                         $(this).find('.bcc-delete-repeater').attr('data-row', index);
                     });
@@ -1096,24 +1153,17 @@
                     $(document).trigger('bcc-repeater-updated');
                 });
             } else {
-                console.error('❌ Delete failed:', res?.data?.message);
                 window.bccToast(res?.data?.message || 'Delete failed', 'error');
                 $btn.html(originalHtml).prop('disabled', false);
             }
         })
-        .fail(function(xhr, status, error) {
-            console.error('❌ Delete AJAX error:', { 
-                status, 
-                error, 
-                response: xhr.responseText 
-            });
-            
+        .fail(function(xhr) {
             let errorMsg = 'Delete failed - server error';
             try {
                 const resp = JSON.parse(xhr.responseText);
                 errorMsg = resp?.data?.message || errorMsg;
             } catch(e) {}
-            
+
             window.bccToast(errorMsg, 'error');
             $btn.html(originalHtml).prop('disabled', false);
         });
@@ -1129,6 +1179,8 @@
             initGallery($(this));
         });
 
+        initDashboardTabs();
+
         // Initialize sliders
         window.initGallerySlider();
 
@@ -1136,6 +1188,9 @@
         $('.bcc-repeater-rows').each(function() {
             initRepeaterDragSort($(this));
         });
+
+        // Initialize lightbox
+        initLightbox();
 
         // Expose public API
         window.bccInlineEdit = {
@@ -1166,6 +1221,116 @@
     $(document).on("click", ".bcc-inline-edit-btn", function (e) {
         e.preventDefault();
         startEdit($(this).siblings(".bcc-inline-text, .bcc-inline-select").first());
+    });
+
+    /* ======================================================
+       GALLERY LIGHTBOX
+    ====================================================== */
+
+    let $bccLightbox = null;
+    let lbImages     = [];
+    let lbIndex      = 0;
+
+    function initLightbox() {
+        if ($('#bcc-lightbox').length) {
+            $bccLightbox = $('#bcc-lightbox');
+            return;
+        }
+
+        $('body').append(
+            '<div id="bcc-lightbox" class="bcc-lightbox" role="dialog" aria-modal="true" aria-label="Image viewer" style="display:none;">' +
+                '<div class="bcc-lightbox-backdrop"></div>' +
+                '<button type="button" class="bcc-lightbox-close" aria-label="Close">&times;</button>' +
+                '<button type="button" class="bcc-lightbox-prev" aria-label="Previous image">&#8249;</button>' +
+                '<div class="bcc-lightbox-content"><img class="bcc-lightbox-img" src="" alt=""></div>' +
+                '<button type="button" class="bcc-lightbox-next" aria-label="Next image">&#8250;</button>' +
+                '<div class="bcc-lightbox-counter"></div>' +
+            '</div>'
+        );
+
+        $bccLightbox = $('#bcc-lightbox');
+
+        $bccLightbox.on('click', '.bcc-lightbox-backdrop, .bcc-lightbox-close', closeLightbox);
+
+        $bccLightbox.on('click', '.bcc-lightbox-prev', function() {
+            lbIndex = (lbIndex - 1 + lbImages.length) % lbImages.length;
+            showLightboxSlide();
+        });
+
+        $bccLightbox.on('click', '.bcc-lightbox-next', function() {
+            lbIndex = (lbIndex + 1) % lbImages.length;
+            showLightboxSlide();
+        });
+    }
+
+    function openLightbox(images, startIndex) {
+        if (!$bccLightbox) initLightbox();
+        lbImages = images;
+        lbIndex  = Math.max(0, Math.min(startIndex, images.length - 1));
+        showLightboxSlide();
+        $bccLightbox.fadeIn(180);
+        $('body').addClass('bcc-no-scroll');
+    }
+
+    function closeLightbox() {
+        if ($bccLightbox) $bccLightbox.fadeOut(180);
+        $('body').removeClass('bcc-no-scroll');
+    }
+
+    function showLightboxSlide() {
+        if (!$bccLightbox || !lbImages.length) return;
+        const single = lbImages.length <= 1;
+        $bccLightbox.find('.bcc-lightbox-img').attr('src', lbImages[lbIndex]);
+        $bccLightbox.find('.bcc-lightbox-counter').text((lbIndex + 1) + ' / ' + lbImages.length);
+        $bccLightbox.find('.bcc-lightbox-prev, .bcc-lightbox-next').prop('disabled', single);
+    }
+
+    // Click any active slider image to open lightbox
+    $(document).on('click', '.bcc-slider-item img', function() {
+        const $allImgs = $(this).closest('.bcc-gallery-slider').find('.bcc-slider-item img');
+        const images   = $allImgs.map(function() { return this.src; }).get();
+        const clicked  = $allImgs.index(this);
+        openLightbox(images, clicked >= 0 ? clicked : 0);
+    });
+
+    // Keyboard navigation for lightbox
+    $(document).on('keydown.bcc-lightbox', function(e) {
+        if (!$bccLightbox || !$bccLightbox.is(':visible')) return;
+        if (e.key === 'Escape')     { closeLightbox(); }
+        if (e.key === 'ArrowLeft')  { lbIndex = (lbIndex - 1 + lbImages.length) % lbImages.length; showLightboxSlide(); }
+        if (e.key === 'ArrowRight') { lbIndex = (lbIndex + 1) % lbImages.length; showLightboxSlide(); }
+    });
+
+    /* ======================================================
+       COPY TO CLIPBOARD
+    ====================================================== */
+
+    $(document).on('click', '.bcc-copy-btn', function(e) {
+        e.stopPropagation();
+
+        const $btn = $(this);
+        const text = String($btn.data('copy') || '');
+        if (!text) return;
+
+        const onCopied = function() {
+            $btn.addClass('bcc-copied').html('<span class="dashicons dashicons-yes"></span>');
+            setTimeout(function() {
+                $btn.removeClass('bcc-copied').html('<span class="dashicons dashicons-clipboard"></span>');
+            }, 2000);
+        };
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(onCopied).catch(function() {
+                window.bccToast('Copy failed', 'error');
+            });
+        } else {
+            // Fallback for older browsers
+            const $tmp = $('<textarea>').css({ position: 'fixed', opacity: 0 }).val(text).appendTo('body');
+            $tmp[0].select();
+            document.execCommand('copy');
+            $tmp.remove();
+            onCopied();
+        }
     });
 
 })(jQuery);

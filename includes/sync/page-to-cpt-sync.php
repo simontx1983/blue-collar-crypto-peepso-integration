@@ -68,6 +68,14 @@ function bcc_find_peepso_relation_table() {
         }
     }
 
+    // Validate column names contain only safe characters
+    if ($page_col && !preg_match('/^[a-zA-Z_]+$/', $page_col)) {
+        $page_col = null;
+    }
+    if ($cat_col && !preg_match('/^[a-zA-Z_]+$/', $cat_col)) {
+        $cat_col = null;
+    }
+
     return [$table, $page_col, $cat_col];
 }
 
@@ -142,23 +150,12 @@ add_action('shutdown', function () {
                 continue;
             }
 
-            // Create shadow CPT
-            $cpt_id = wp_insert_post([
-                'post_type'   => $post_type,
-                'post_title'  => $data['title'],
-                'post_status' => 'publish',
-                'post_author' => (int) $data['author'],
-            ]);
+            // Create shadow CPT via domain layer
+            $cpt_id = BCC_Domain_Abstract::create_from_page_by_type($page_id, $post_type);
 
-            if (!$cpt_id || is_wp_error($cpt_id)) continue;
+            if (!$cpt_id) continue;
 
-            update_post_meta($cpt_id, '_peepso_page_id', (int) $page_id);
             update_post_meta($cpt_id, '_peepso_cat_id', (int) $cat_id);
-
-            // Default visibility
-            update_post_meta($cpt_id, '_bcc_visibility', 'public');
-
-            update_post_meta($page_id, '_linked_' . $post_type . '_id', (int) $cpt_id);
 
             $linked[$post_type] = (int) $cpt_id;
         }

@@ -23,35 +23,4 @@ class BCC_Options_Helper {
         
         return $map;
     }
-    
-    /**
-     * Build HTML select from options string
-     */
-    public static function build_select(string $options_str, $selected = ''): string {
-        $map = self::parse_options_string($options_str);
-        
-        if (empty($map)) {
-            return '<input class="bcc-inline-input" type="text" value="">';
-        }
-        
-        $html = '<select class="bcc-inline-input">';
-        
-        // Add empty option if none selected
-        if ($selected === '' && !isset($map[''])) {
-            $html .= '<option value="">— Select —</option>';
-        }
-        
-        foreach ($map as $key => $label) {
-            $sel = (string) $key === (string) $selected ? ' selected' : '';
-            $html .= sprintf(
-                '<option value="%s"%s>%s</option>',
-                esc_attr($key),
-                $sel,
-                esc_html($label)
-            );
-        }
-        
-        $html .= '</select>';
-        return $html;
-    }
 }
