@@ -171,6 +171,13 @@ if (!isset($page_segment)) {
 			</div>
 		</div>
 
+		<?php
+		// Trust header — injected directly above nav in our own template.
+		if ( function_exists( 'bcc_render_trust_header_panel' ) ) {
+			bcc_render_trust_header_panel( (int) $page->id, 'dashboard' );
+		}
+		?>
+
 		<div class="ps-focus__menu ps-js-focus__menu">
 			<div class="ps-focus__menu-inner ps-js-focus__menu-inner">
 				<?php

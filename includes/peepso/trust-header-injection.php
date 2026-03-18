@@ -8,12 +8,12 @@
  * the `.ps-focus__menu` div.
  *
  * Two code paths handle this:
- *   1. Normal page views (stream, about, followers, settings) — the
- *      page-header template renders, so we use output buffer interception
- *      to inject before .ps-focus__menu.
- *   2. Dashboard segment — PeepSo skips page-header entirely and fires
- *      peepso_page_segment_dashboard directly, so we hook that at
- *      priority 5 (before dashboard content).
+ *   1. Normal page views (stream, about, followers, settings) — PeepSo
+ *      renders its own page-header.php, so we use output buffer
+ *      interception to inject before .ps-focus__menu.
+ *   2. Dashboard segment — uses our own page-header partial
+ *      (includes/partials/page-header.php) which injects the trust
+ *      header directly before the nav menu in the template itself.
  *
  * The static $rendered_for guard in bcc_render_trust_header_panel()
  * prevents duplicate rendering if both paths fire for the same page.
@@ -139,21 +139,8 @@ function bcc_trust_header_buffer_end( $section, $template, $data, $return_output
 }
 
 /* ──────────────────────────────────────────────────────────────────────
-   Dashboard segment fallback:
-   PeepSo does NOT render page-header.php for segment views (dashboard,
-   settings, etc. loaded via AJAX). The buffer strategy above won't fire.
-   This hook ensures the trust header still appears at priority 5
-   (before dashboard content).
-   The static $rendered_for guard prevents duplicates if both paths fire.
+   Dashboard segment:
+   The dashboard uses our own page-header partial (includes/partials/
+   page-header.php) which injects the trust header directly before the
+   nav menu. No separate hook needed — the template handles it.
    ────────────────────────────────────────────────────────────────────── */
-
-add_action( 'peepso_page_segment_dashboard', 'bcc_inject_trust_header_in_dashboard', 5, 2 );
-
-function bcc_inject_trust_header_in_dashboard( $args, $url ) {
-    $page = $args['page'] ?? null;
-    if ( ! $page || empty( $page->id ) ) {
-        return;
-    }
-
-    bcc_render_trust_header_panel( (int) $page->id, 'dashboard' );
-}
