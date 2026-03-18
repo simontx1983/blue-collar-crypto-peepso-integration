@@ -2,14 +2,12 @@
 /**
  * Injects the BCC Trust Header Panel into PeepSo page views.
  *
- * Two injection points:
- *   1. After the page-header template (stream, about, followers, etc.)
- *      → fires via peepso_action_after_exec_template
- *   2. At the top of the dashboard segment (before dashboard content)
- *      → fires via peepso_page_segment_dashboard at priority 5
+ * Placement: DIRECTLY ABOVE the navigation menu, after the page info
+ * (name, description, followers). This is achieved by capturing the
+ * page-header template output and injecting trust header HTML before
+ * the `.ps-focus__menu` div.
  *
- * When PeepSo renders a segment, page.php (and its page-header) is NOT
- * rendered — only the segment action fires. So we need both hooks.
+ * Single injection point — no duplicate rendering possible.
  *
  * @package Blue_Collar_Crypto
  */
@@ -34,7 +32,7 @@ function bcc_render_trust_header_panel( int $page_id, string $mode ) {
     $rendered_for[ $page_id ] = true;
 
     // Bail if bcc-trust-engine is not active.
-    if ( ! class_exists( '\\BCCTrust\\Repositories\\ScoreRepository' ) ) {
+    if ( ! class_exists( '\\BCC\\Trust\\Plugin' ) ) {
         return;
     }
 
@@ -42,18 +40,54 @@ function bcc_render_trust_header_panel( int $page_id, string $mode ) {
 }
 
 /* ──────────────────────────────────────────────────────────────────────
-   Hook 1: After page-header template (stream and non-segment views)
+   Output buffer strategy:
+   1. Before page-header renders → start output buffer
+   2. After page-header renders  → capture output, inject trust header
+      HTML before .ps-focus__menu, echo the modified output.
    ────────────────────────────────────────────────────────────────────── */
 
-add_action( 'peepso_action_after_exec_template', 'bcc_inject_trust_header_after_page_header', 10, 4 );
+/**
+ * Start capturing the page-header template output.
+ */
+add_action( 'peepso_action_before_exec_template', 'bcc_trust_header_buffer_start', 10, 4 );
 
-function bcc_inject_trust_header_after_page_header( $section, $template, $data, $return_output ) {
+function bcc_trust_header_buffer_start( $section, $template, $data, $return_output ) {
     if ( 'pages' !== $section || 'page-header' !== $template ) {
+        return;
+    }
+
+    // Don't buffer if the template itself is returning output (used in AJAX)
+    if ( $return_output ) {
+        return;
+    }
+
+    ob_start();
+}
+
+/**
+ * Capture the page-header output and inject trust header above the nav menu.
+ */
+add_action( 'peepso_action_after_exec_template', 'bcc_trust_header_buffer_end', 10, 4 );
+
+function bcc_trust_header_buffer_end( $section, $template, $data, $return_output ) {
+    if ( 'pages' !== $section || 'page-header' !== $template ) {
+        return;
+    }
+
+    if ( $return_output ) {
+        return;
+    }
+
+    $output = ob_get_clean();
+
+    if ( $output === false ) {
+        // Buffer wasn't started (shouldn't happen, but guard against it)
         return;
     }
 
     $page = $data['page'] ?? null;
     if ( ! $page || empty( $page->id ) ) {
+        echo $output;
         return;
     }
 
@@ -66,20 +100,31 @@ function bcc_inject_trust_header_after_page_header( $section, $template, $data, 
         }
     }
 
+    // Render the trust header into a string.
+    ob_start();
     bcc_render_trust_header_panel( (int) $page->id, $mode );
-}
+    $trust_header_html = ob_get_clean();
 
-/* ──────────────────────────────────────────────────────────────────────
-   Hook 2: Dashboard segment (runs BEFORE dashboard content at priority 5)
-   ────────────────────────────────────────────────────────────────────── */
-
-add_action( 'peepso_page_segment_dashboard', 'bcc_inject_trust_header_in_dashboard', 5, 2 );
-
-function bcc_inject_trust_header_in_dashboard( $args, $url ) {
-    $page = $args['page'] ?? null;
-    if ( ! $page || empty( $page->id ) ) {
+    if ( empty( $trust_header_html ) ) {
+        // No trust header to inject (engine not active, or already rendered).
+        echo $output;
         return;
     }
 
-    bcc_render_trust_header_panel( (int) $page->id, 'dashboard' );
+    // Inject BEFORE the navigation menu.
+    // The nav menu starts with: <div class="ps-focus__menu
+    $injection_marker = '<div class="ps-focus__menu ';
+
+    $pos = strpos( $output, $injection_marker );
+    if ( $pos !== false ) {
+        // Insert trust header right before the nav menu div.
+        $output = substr( $output, 0, $pos )
+                . $trust_header_html
+                . substr( $output, $pos );
+    } else {
+        // Fallback: append after the entire header if marker not found.
+        $output .= $trust_header_html;
+    }
+
+    echo $output;
 }
