@@ -2,9 +2,10 @@
 /**
  * Plugin Name: Blue Collar Crypto – PeepSo Integration
  * Description: Core integration layer between Blue Collar Crypto and the PeepSo social platform.
- * Version: 1.0.0
+ * Version: 1.1.0
  * Author: Blue Collar Labs LLC
  * License: GPL v2 or later
+ * Requires Plugins: peepso-core
  */
 
 if (!defined('ABSPATH')) exit;
@@ -14,11 +15,17 @@ if (!defined('ABSPATH')) exit;
  * Constants
  * ==========================================================
  */
-define('BCC_VERSION', '1.0.0');
+define('BCC_VERSION', '1.1.0');
 define('BCC_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('BCC_INCLUDES_PATH', BCC_PLUGIN_PATH . 'includes/');
 define('BCC_TEMPLATES_PATH', BCC_PLUGIN_PATH . 'templates/');
 define('BCC_URL', plugin_dir_url(__FILE__));
+
+// ── PSR-4 autoloader ────────────────────────────────────────────────────────
+$bcc_peepso_autoloader = BCC_PLUGIN_PATH . 'vendor/autoload.php';
+if (file_exists($bcc_peepso_autoloader)) {
+    require_once $bcc_peepso_autoloader;
+}
 
 /**
  * ==========================================================

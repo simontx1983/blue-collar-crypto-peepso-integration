@@ -57,4 +57,10 @@ function bcc_enqueue_assets() {
         'ajax_url' => admin_url('admin-ajax.php'),
         'nonce'    => wp_create_nonce('bcc_nonce')
     ]);
+
+    /* -----------------------------------------
+       TRUST HEADER (registered by bcc-trust-engine)
+    ----------------------------------------- */
+    wp_enqueue_style( 'bcc-trust-header' );
+    wp_enqueue_script( 'bcc-trust-header' );
 }

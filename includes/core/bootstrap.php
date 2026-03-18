@@ -79,8 +79,10 @@ require_once BCC_INCLUDES_PATH . 'helpers/sync-repair.php';
 
 require_once BCC_INCLUDES_PATH . 'helpers/data-integrity.php';
 require_once BCC_INCLUDES_PATH . 'helpers/class-bcc-options-helper.php';
+require_once BCC_INCLUDES_PATH . 'helpers/page-context.php';
 
 require_once BCC_INCLUDES_PATH . 'peepso/segments.php';
+require_once BCC_INCLUDES_PATH . 'peepso/trust-header-injection.php';
 
 /* ======================================================
    GUTENBERG BLOCKS

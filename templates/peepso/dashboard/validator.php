@@ -17,7 +17,7 @@ $has_validator = $validator_id > 0;
 $can_view = ( $has_validator && function_exists( 'bcc_user_can_view_post' ) ) ? bcc_user_can_view_post( $validator_id ) : false;
 $can_edit = ( $has_validator && function_exists( 'bcc_user_can_edit_post' ) ) ? bcc_user_can_edit_post( $validator_id ) : false;
 
-// On-chain data: get wallet links + validator rows for this project
+// On-chain data: get wallet links + validator rows for this page
 $has_onchain = false;
 $onchain_validators = ['items' => [], 'total' => 0];
 $onchain_stats = [];
