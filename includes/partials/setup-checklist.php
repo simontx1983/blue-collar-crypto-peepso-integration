@@ -2,8 +2,8 @@
 /**
  * BCC Setup Checklist
  *
- * Shown on the Dashboard tab for page owners who have a new/incomplete project.
- * Guides them through the steps that most improve their trust score.
+ * Shown on the Dashboard tab for page owners who have a new/incomplete page.
+ * Guides them through the steps that most improve their Trust Score.
  *
  * Expected variables (set by dashboard.php before include):
  *   $page      — PeepSoPage object
@@ -31,7 +31,7 @@ $has_cover   = (false !== stripos($cover_url, 'peepso/pages/'));
 // 3. Avatar
 $has_avatar = method_exists($page, 'has_avatar') ? $page->has_avatar() : false;
 
-// 4. Project type profile fields — check at least one non-empty ACF field on the CPT
+// 4. Domain profile fields — check at least one non-empty ACF field on the CPT
 $has_profile_data = false;
 $profile_post_id  = 0;
 
@@ -59,10 +59,9 @@ $has_github = (bool) $wpdb->get_var($wpdb->prepare(
 
 // 6. Wallet connected
 $has_wallet = false;
-if (class_exists('\\BCCTrust\\Repositories\\WalletRepository')) {
+if (class_exists('\\BCC\\Trust\\Plugin')) {
     try {
-        $walletRepo  = new \BCCTrust\Repositories\WalletRepository();
-        $connections = $walletRepo->getAllConnections($user_id);
+        $connections = \BCC\Trust\Plugin::instance()->walletRepository()->getAllConnections($user_id);
         $has_wallet  = !empty($connections);
     } catch (Exception $e) { /* silent */ }
 }
@@ -80,14 +79,14 @@ if ($profile_post_id) {
 $steps = [
     [
         'done'    => true,
-        'label'   => 'Project created',
-        'hint'    => 'Your project page is live.',
+        'label'   => 'Page created',
+        'hint'    => 'Your page is live.',
         'action'  => null,
     ],
     [
         'done'    => $has_description,
         'label'   => 'Write a description',
-        'hint'    => 'Tell people what your project does.',
+        'hint'    => 'Tell people what your page is about.',
         'action'  => $page->get_url() . 'settings/',
         'action_label' => 'Edit settings',
     ],
@@ -115,7 +114,7 @@ $steps = [
     [
         'done'    => $has_github,
         'label'   => 'Verify GitHub account',
-        'hint'    => 'Adds a trust boost and proves code ownership.',
+        'hint'    => 'Adds a Trust Score boost and proves code ownership.',
         'action'  => null,
         'action_label' => 'See Trust widget',
     ],
@@ -168,7 +167,7 @@ if ($completed_steps === $total_steps) {
     </div>
 
     <p class="bcc-setup-checklist__sub">
-        A complete profile builds trust with visitors and improves your credibility score.
+        A complete profile builds trust with visitors and improves your Trust Score.
     </p>
 
     <!-- Steps grid -->
