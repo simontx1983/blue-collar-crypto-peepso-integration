@@ -5,7 +5,7 @@
  * Version: 1.1.0
  * Author: Blue Collar Labs LLC
  * License: GPL v2 or later
- * Requires Plugins: peepso-core
+ * Requires Plugins: peepso
  */
 
 if (!defined('ABSPATH')) exit;
