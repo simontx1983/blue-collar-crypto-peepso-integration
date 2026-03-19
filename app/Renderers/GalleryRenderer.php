@@ -125,7 +125,7 @@ class GalleryRenderer
             $first = false;
 
             echo '<div class="bcc-slider-item ' . $active_class . '">';
-            echo '<img src="' . esc_url($img->url) . '" loading="lazy" alt="">';
+            echo '<img src="' . esc_url(set_url_scheme($img->url)) . '" loading="lazy" alt="">';
             echo '</div>';
         }
 
@@ -164,7 +164,7 @@ class GalleryRenderer
 
         echo '<input type="checkbox" class="bcc-thumb-select">';
 
-        echo '<img src="' . esc_url($img->thumbnail ?: $img->url) . '" loading="lazy" alt="">';
+        echo '<img src="' . esc_url(set_url_scheme($img->thumbnail ?: $img->url)) . '" loading="lazy" alt="">';
 
         echo '<span class="bcc-gallery-remove" title="Remove image">×</span>';
 

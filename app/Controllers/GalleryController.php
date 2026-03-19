@@ -77,7 +77,7 @@ class GalleryController
 
         $upload_dir = wp_upload_dir();
         $base_dir   = trailingslashit($upload_dir['basedir']) . 'bcc-gallery/';
-        $base_url   = trailingslashit($upload_dir['baseurl']) . 'bcc-gallery/';
+        $base_url   = set_url_scheme(trailingslashit($upload_dir['baseurl']) . 'bcc-gallery/');
 
         if (!file_exists($base_dir)) {
             wp_mkdir_p($base_dir);
@@ -244,8 +244,8 @@ class GalleryController
         foreach (($result['items'] ?? []) as $img) {
             $items[] = [
                 'id'        => (int) $img->id,
-                'url'       => (string) $img->url,
-                'thumbnail' => (string) ($img->thumbnail ?: $img->url),
+                'url'       => set_url_scheme((string) $img->url),
+                'thumbnail' => set_url_scheme((string) ($img->thumbnail ?: $img->url)),
             ];
         }
 
