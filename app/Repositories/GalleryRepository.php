@@ -137,25 +137,6 @@ class GalleryRepository
         return $image_id;
     }
 
-    public static function get_images(int $collection_id, int $limit = 50): array
-    {
-        global $wpdb;
-        $table = self::images_table();
-
-        $rows = $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT * FROM $table
-                 WHERE collection_id=%d
-                 ORDER BY sort_order ASC, id ASC
-                 LIMIT %d",
-                $collection_id,
-                $limit
-            )
-        );
-
-        return is_array($rows) ? $rows : [];
-    }
-
     public static function get_images_paged(int $collection_id, int $page = 1, int $per_page = 12): array
     {
         global $wpdb;

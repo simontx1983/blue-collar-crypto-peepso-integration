@@ -27,11 +27,17 @@ if ( ! defined( 'ABSPATH' ) || ! $page_id ) {
     return;
 }
 
-if ( ! class_exists( '\\BCC\\Trust\\Plugin' ) ) {
+if ( ! class_exists( '\\BCC\\Core\\ServiceLocator' ) ) {
     return;
 }
 
-$data = \BCC\Trust\Plugin::instance()->peepSoIntegration()->getTrustHeaderData( $page_id, $mode );
+$service = \BCC\Core\ServiceLocator::resolveTrustHeaderData();
+
+if ( ! $service ) {
+    return;
+}
+
+$data = $service->getTrustHeaderData( $page_id, $mode );
 
 $total            = $data['total'];
 $confidence       = $data['confidence'];

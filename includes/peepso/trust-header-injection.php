@@ -40,11 +40,6 @@ function bcc_render_trust_header_panel( int $page_id, string $mode ) {
     }
     $rendered_for[ $page_id ] = true;
 
-    // Bail if bcc-trust-engine is not active.
-    if ( ! class_exists( '\\BCC\\Trust\\Plugin' ) ) {
-        return;
-    }
-
     include BCC_PLUGIN_PATH . 'templates/peepso/trust-header-panel.php';
 }
 

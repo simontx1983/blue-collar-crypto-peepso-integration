@@ -15,7 +15,6 @@ return array(
     'BCC\\PeepSo\\Domain\\NftPageType' => $baseDir . '/app/Domain/NftPageType.php',
     'BCC\\PeepSo\\Domain\\ValidatorPageType' => $baseDir . '/app/Domain/ValidatorPageType.php',
     'BCC\\PeepSo\\Helpers\\OptionsHelper' => $baseDir . '/app/Helpers/OptionsHelper.php',
-    'BCC\\PeepSo\\Plugin' => $baseDir . '/app/Plugin.php',
     'BCC\\PeepSo\\Renderers\\FieldRenderer' => $baseDir . '/app/Renderers/FieldRenderer.php',
     'BCC\\PeepSo\\Renderers\\GalleryRenderer' => $baseDir . '/app/Renderers/GalleryRenderer.php',
     'BCC\\PeepSo\\Renderers\\RepeaterRenderer' => $baseDir . '/app/Renderers/RepeaterRenderer.php',

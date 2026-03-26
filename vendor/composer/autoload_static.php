@@ -30,7 +30,6 @@ class ComposerStaticInit919a6277838ba16141192ac1ae0f7f55
         'BCC\\PeepSo\\Domain\\NftPageType' => __DIR__ . '/../..' . '/app/Domain/NftPageType.php',
         'BCC\\PeepSo\\Domain\\ValidatorPageType' => __DIR__ . '/../..' . '/app/Domain/ValidatorPageType.php',
         'BCC\\PeepSo\\Helpers\\OptionsHelper' => __DIR__ . '/../..' . '/app/Helpers/OptionsHelper.php',
-        'BCC\\PeepSo\\Plugin' => __DIR__ . '/../..' . '/app/Plugin.php',
         'BCC\\PeepSo\\Renderers\\FieldRenderer' => __DIR__ . '/../..' . '/app/Renderers/FieldRenderer.php',
         'BCC\\PeepSo\\Renderers\\GalleryRenderer' => __DIR__ . '/../..' . '/app/Renderers/GalleryRenderer.php',
         'BCC\\PeepSo\\Renderers\\RepeaterRenderer' => __DIR__ . '/../..' . '/app/Renderers/RepeaterRenderer.php',

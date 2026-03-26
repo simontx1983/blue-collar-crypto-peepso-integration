@@ -19,129 +19,160 @@ if (!$ps_page_user->can('manage_page')) {
     return;
 }
 
-/* ── Check each step ─────────────────────────────────────── */
+/* ── Short-circuit: skip everything if already complete ──── */
+$cache_key = 'bcc_checklist_' . $page->id . '_' . $user_id;
+$cached    = wp_cache_get($cache_key, 'bcc_checklist');
 
-// 1. Description (meaningful = more than 30 chars)
-$has_description = !empty($page->description) && strlen(trim(strip_tags($page->description))) > 30;
-
-// 2. Cover photo — page-header.php uses stripos($coverUrl, 'peepso/pages/') as indicator
-$cover_url   = $page->get_cover_url();
-$has_cover   = (false !== stripos($cover_url, 'peepso/pages/'));
-
-// 3. Avatar
-$has_avatar = method_exists($page, 'has_avatar') ? $page->has_avatar() : false;
-
-// 4. Domain profile fields — check at least one non-empty ACF field on the CPT
-$has_profile_data = false;
-$profile_post_id  = 0;
-
-if (function_exists('bcc_get_builder_id'))   $profile_post_id = bcc_get_builder_id($page->id);
-if (!$profile_post_id && function_exists('bcc_get_validator_id')) $profile_post_id = bcc_get_validator_id($page->id);
-if (!$profile_post_id && function_exists('bcc_get_nft_id'))       $profile_post_id = bcc_get_nft_id($page->id);
-if (!$profile_post_id && function_exists('bcc_get_dao_id'))        $profile_post_id = bcc_get_dao_id($page->id);
-
-if ($profile_post_id && function_exists('get_fields')) {
-    $fields = get_fields($profile_post_id);
-    if (!empty($fields)) {
-        foreach ($fields as $val) {
-            if (!empty($val)) { $has_profile_data = true; break; }
-        }
-    }
-}
-
-// 5. GitHub connected
-global $wpdb;
-$vt = class_exists('\\BCC\\Core\\DB\\DB') ? \BCC\Core\DB\DB::table('trust_user_verifications') : $wpdb->prefix . 'bcc_trust_user_verifications';
-$has_github = (bool) $wpdb->get_var($wpdb->prepare(
-    "SELECT 1 FROM {$vt} WHERE user_id = %d AND type = 'github' AND status = 'active' LIMIT 1",
-    $user_id
-));
-
-// 6. Wallet connected
-$has_wallet = false;
-if (class_exists('\\BCC\\Trust\\Plugin')) {
-    try {
-        $connections = \BCC\Trust\Plugin::instance()->walletRepository()->getAllConnections($user_id);
-        $has_wallet  = !empty($connections);
-    } catch (Exception $e) { /* silent */ }
-}
-
-// 7. Social links — check at least one network_ field on the CPT
-$has_links = false;
-if ($profile_post_id) {
-    $link_keys = ['network_twitter', 'network_github', 'network_discord', 'network_telegram', 'network_youtube', 'network_linkedin', 'medium', 'reddit'];
-    foreach ($link_keys as $k) {
-        if (function_exists('get_field') && get_field($k, $profile_post_id)) { $has_links = true; break; }
-    }
-}
-
-/* ── Build step list ─────────────────────────────────────── */
-$steps = [
-    [
-        'done'    => true,
-        'label'   => 'Page created',
-        'hint'    => 'Your page is live.',
-        'action'  => null,
-    ],
-    [
-        'done'    => $has_description,
-        'label'   => 'Write a description',
-        'hint'    => 'Tell people what your page is about.',
-        'action'  => $page->get_url() . 'settings/',
-        'action_label' => 'Edit settings',
-    ],
-    [
-        'done'    => $has_cover,
-        'label'   => 'Add a cover photo',
-        'hint'    => 'A cover makes your page stand out.',
-        'action'  => $page->get_url(),
-        'action_label' => 'Go to page',
-    ],
-    [
-        'done'    => $has_avatar,
-        'label'   => 'Upload an avatar',
-        'hint'    => 'A logo builds instant recognition.',
-        'action'  => $page->get_url(),
-        'action_label' => 'Go to page',
-    ],
-    [
-        'done'    => $has_profile_data,
-        'label'   => 'Complete your profile',
-        'hint'    => 'Fill in chains, services, or portfolio items.',
-        'action'  => null,
-        'action_label' => 'Scroll down',
-    ],
-    [
-        'done'    => $has_github,
-        'label'   => 'Verify GitHub account',
-        'hint'    => 'Adds a Trust Score boost and proves code ownership.',
-        'action'  => null,
-        'action_label' => 'See Trust widget',
-    ],
-    [
-        'done'    => $has_wallet,
-        'label'   => 'Connect a wallet',
-        'hint'    => 'Prove on-chain identity for higher credibility.',
-        'action'  => null,
-        'action_label' => 'See Trust widget',
-    ],
-    [
-        'done'    => $has_links,
-        'label'   => 'Add social links',
-        'hint'    => 'Twitter, Discord, GitHub, Telegram…',
-        'action'  => null,
-        'action_label' => 'Scroll down',
-    ],
-];
-
-$total_steps     = count($steps);
-$completed_steps = count(array_filter($steps, fn($s) => $s['done']));
-$pct             = (int) round(($completed_steps / $total_steps) * 100);
-
-// Don't show if fully complete
-if ($completed_steps === $total_steps) {
+if ($cached === 'complete') {
     return;
 }
+
+if (is_array($cached)) {
+    // Serve fully cached result.
+    $steps           = $cached['steps'];
+    $total_steps     = $cached['total'];
+    $completed_steps = $cached['completed'];
+    $pct             = $cached['pct'];
+} else {
+
+    /* ── Check each step ─────────────────────────────────────── */
+
+    // 1. Description (meaningful = more than 30 chars)
+    $has_description = !empty($page->description) && strlen(trim(strip_tags($page->description))) > 30;
+
+    // 2. Cover photo — page-header.php uses stripos($coverUrl, 'peepso/pages/') as indicator
+    $cover_url   = $page->get_cover_url();
+    $has_cover   = (false !== stripos($cover_url, 'peepso/pages/'));
+
+    // 3. Avatar
+    $has_avatar = method_exists($page, 'has_avatar') ? $page->has_avatar() : false;
+
+    // 4. Domain profile fields — check at least one non-empty ACF field on the CPT
+    $has_profile_data = false;
+    $profile_post_id  = 0;
+
+    if (function_exists('bcc_get_builder_id'))                        $profile_post_id = bcc_get_builder_id($page->id);
+    if (!$profile_post_id && function_exists('bcc_get_validator_id')) $profile_post_id = bcc_get_validator_id($page->id);
+    if (!$profile_post_id && function_exists('bcc_get_nft_id'))      $profile_post_id = bcc_get_nft_id($page->id);
+    if (!$profile_post_id && function_exists('bcc_get_dao_id'))      $profile_post_id = bcc_get_dao_id($page->id);
+
+    // Batch-load ALL post meta for the profile CPT in one query.
+    // get_fields() and get_field() both read from wp_postmeta; priming
+    // the cache means zero additional queries for steps 4 and 7.
+    $has_links = false;
+    if ($profile_post_id) {
+        update_meta_cache('post', [$profile_post_id]);
+
+        if (function_exists('get_fields')) {
+            $fields = get_fields($profile_post_id);
+            if (!empty($fields)) {
+                // Check profile data (step 4) and social links (step 7) in one pass.
+                $link_keys = ['network_twitter', 'network_github', 'network_discord', 'network_telegram', 'network_youtube', 'network_linkedin', 'medium', 'reddit'];
+                foreach ($fields as $key => $val) {
+                    if (!empty($val)) {
+                        $has_profile_data = true;
+                        if (in_array($key, $link_keys, true)) {
+                            $has_links = true;
+                        }
+                    }
+                    // Early exit once both flags are set.
+                    if ($has_profile_data && $has_links) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. GitHub connected & 6. Wallet connected — via ServiceLocator contract
+    $has_github = false;
+    $has_wallet = false;
+
+    if (class_exists('\\BCC\\Core\\ServiceLocator')) {
+        $walletService = \BCC\Core\ServiceLocator::resolveWalletVerificationRead();
+        if ($walletService) {
+            $has_github = $walletService->hasVerification($user_id, 'github');
+            $has_wallet = $walletService->hasVerifiedWallet($user_id);
+        }
+    }
+
+    /* ── Build step list ─────────────────────────────────────── */
+    $steps = [
+        [
+            'done'    => true,
+            'label'   => 'Page created',
+            'hint'    => 'Your page is live.',
+            'action'  => null,
+        ],
+        [
+            'done'    => $has_description,
+            'label'   => 'Write a description',
+            'hint'    => 'Tell people what your page is about.',
+            'action'  => $page->get_url() . 'settings/',
+            'action_label' => 'Edit settings',
+        ],
+        [
+            'done'    => $has_cover,
+            'label'   => 'Add a cover photo',
+            'hint'    => 'A cover makes your page stand out.',
+            'action'  => $page->get_url(),
+            'action_label' => 'Go to page',
+        ],
+        [
+            'done'    => $has_avatar,
+            'label'   => 'Upload an avatar',
+            'hint'    => 'A logo builds instant recognition.',
+            'action'  => $page->get_url(),
+            'action_label' => 'Go to page',
+        ],
+        [
+            'done'    => $has_profile_data,
+            'label'   => 'Complete your profile',
+            'hint'    => 'Fill in chains, services, or portfolio items.',
+            'action'  => null,
+            'action_label' => 'Scroll down',
+        ],
+        [
+            'done'    => $has_github,
+            'label'   => 'Verify GitHub account',
+            'hint'    => 'Adds a Trust Score boost and proves code ownership.',
+            'action'  => null,
+            'action_label' => 'See Trust widget',
+        ],
+        [
+            'done'    => $has_wallet,
+            'label'   => 'Connect a wallet',
+            'hint'    => 'Prove on-chain identity for higher credibility.',
+            'action'  => null,
+            'action_label' => 'See Trust widget',
+        ],
+        [
+            'done'    => $has_links,
+            'label'   => 'Add social links',
+            'hint'    => 'Twitter, Discord, GitHub, Telegram…',
+            'action'  => null,
+            'action_label' => 'Scroll down',
+        ],
+    ];
+
+    $total_steps     = count($steps);
+    $completed_steps = count(array_filter($steps, fn($s) => $s['done']));
+    $pct             = (int) round(($completed_steps / $total_steps) * 100);
+
+    // Cache the result for this request (persistent with Redis).
+    if ($completed_steps === $total_steps) {
+        wp_cache_set($cache_key, 'complete', 'bcc_checklist', DAY_IN_SECONDS);
+        return;
+    }
+
+    wp_cache_set($cache_key, [
+        'steps'     => $steps,
+        'total'     => $total_steps,
+        'completed' => $completed_steps,
+        'pct'       => $pct,
+    ], 'bcc_checklist', 5 * MINUTE_IN_SECONDS);
+
+} // end cache miss
 
 ?>
 

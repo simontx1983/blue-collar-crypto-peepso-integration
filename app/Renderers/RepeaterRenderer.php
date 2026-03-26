@@ -141,18 +141,4 @@ class RepeaterRenderer
         echo '</div>';
     }
 
-    public static function get_count(int $post_id, string $repeater_key): int
-    {
-        if (!function_exists('get_field')) {
-            return 0;
-        }
-
-        $rows = get_field($repeater_key, $post_id);
-        return is_array($rows) ? count($rows) : 0;
-    }
-
-    public static function has_rows(int $post_id, string $repeater_key): bool
-    {
-        return self::get_count($post_id, $repeater_key) > 0;
-    }
 }

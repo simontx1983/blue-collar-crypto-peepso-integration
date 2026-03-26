@@ -11,12 +11,6 @@ if (!function_exists('bcc_render_divider')) {
     }
 }
 
-if (!function_exists('bcc_options_to_map')) {
-    function bcc_options_to_map(string $options_str): array {
-        return BCC_Options_Helper::parse_options_string($options_str);
-    }
-}
-
 if (!function_exists('bcc_render_row')) {
     function bcc_render_row(array $args = []): void {
         $renderer = new BCC_Field_Renderer($args);
