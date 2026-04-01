@@ -27,15 +27,13 @@ if ( ! defined( 'ABSPATH' ) || ! $page_id ) {
     return;
 }
 
-if ( ! class_exists( '\\BCC\\Core\\ServiceLocator' ) ) {
+if ( ! class_exists( '\\BCC\\Core\\ServiceLocator' )
+    || ! \BCC\Core\ServiceLocator::hasRealService( \BCC\Core\Contracts\TrustHeaderDataInterface::class )
+) {
     return;
 }
 
 $service = \BCC\Core\ServiceLocator::resolveTrustHeaderData();
-
-if ( ! $service ) {
-    return;
-}
 
 $data = $service->getTrustHeaderData( $page_id, $mode );
 

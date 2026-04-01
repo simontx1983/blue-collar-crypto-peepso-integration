@@ -52,7 +52,7 @@ if ( ! function_exists( 'bcc_get_source_registry' ) ) {
             $registry = [
                 'user' => [
                     'icon'  => '&#x270F;&#xFE0E;',
-                    'label' => 'User-submitted',
+                    'label' => 'Self-Reported (Unverified)',
                     'class' => 'bcc-source-badge--user',
                 ],
                 'onchain' => [

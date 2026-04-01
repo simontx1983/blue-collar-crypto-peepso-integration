@@ -93,85 +93,180 @@ $network_options_str = implode(',', $network_options);
     </section>
 
     <!-- ======================================================
-        NFT COLLECTIONS
+        NFT COLLECTIONS (Unified: On-Chain + Self-Reported)
     ====================================================== -->
-    <section class="bcc-section bcc-section-collections">
+    <?php
+    $viewer_id      = get_current_user_id();
+    $onchain_items  = [];
+    $onchain_fetched_at = '';
+    $owner_id       = 0;
+
+    // ── Load on-chain collection data ──
+    if ($has_nft && class_exists('\\BCC\\Onchain\\Services\\CollectionService')) {
+        // Page owners see ALL collections (including hidden) so they can
+        // toggle visibility back on. Public viewers see only visible ones.
+        $all_onchain = $can_edit
+            ? \BCC\Onchain\Services\CollectionService::getForProject($nft_id, 1, 999, 'total_volume', true)
+            : \BCC\Onchain\Services\CollectionService::getAllForProject($nft_id);
+        $onchain_items = $all_onchain['items'] ?? [];
+
+        if (!empty($onchain_items)) {
+            $onchain_fetched_at = $onchain_items[0]->fetched_at ?? '';
+        }
+
+        if (class_exists('\\BCC\\Core\\PeepSo\\PeepSo')) {
+            $owner_id = (int) \BCC\Core\PeepSo\PeepSo::get_page_owner($page_id);
+        }
+
+        // Enrich with badge flags
+        $onchain_items = \BCC\Onchain\Services\CollectionService::enrichWithBadges(
+            $onchain_items,
+            $owner_id,
+            $viewer_id
+        );
+
+        foreach ($onchain_items as $item) {
+            $item->can_toggle = $can_edit;
+        }
+    }
+
+    // ── Load manual ACF collections ──
+    $manual_rows = [];
+    if ($has_nft && function_exists('get_field')) {
+        $manual_rows = get_field('nft_collections', $nft_id) ?: [];
+    }
+
+    // ── Merge + Deduplicate ──
+    $unified_collections = [];
+    if (class_exists('\\BCC\\Onchain\\Services\\CollectionService')) {
+        $unified_collections = \BCC\Onchain\Services\CollectionService::mergeWithManual($onchain_items, $manual_rows);
+    } elseif (!empty($manual_rows)) {
+        // No on-chain plugin — show all manual rows as self-reported
+        foreach ($manual_rows as $row) {
+            $unified_collections[] = (object) [
+                'id'                 => null,
+                'contract_address'   => $row['collection_contract_address'] ?? '',
+                'collection_name'    => $row['collection_name'] ?? '',
+                'chain_name'         => $row['collection_chain'] ?? '',
+                'chain_slug'         => '',
+                'explorer_url'       => '',
+                'native_token'       => '',
+                'token_standard'     => null,
+                'total_supply'       => $row['collection_total_supply'] ?? null,
+                'floor_price'        => $row['collection_floor_price'] ?? null,
+                'floor_currency'     => null,
+                'total_volume'       => null,
+                'unique_holders'     => $row['collection_unique_holders'] ?? null,
+                'show_on_profile'    => 1,
+                'fetched_at'         => null,
+                'data_source'        => 'self-reported',
+                'is_creator'         => true,
+                'viewer_holds'       => false,
+                'can_toggle'         => false,
+            ];
+        }
+    }
+
+    $has_collections = !empty($unified_collections);
+
+    // ── Aggregate stats (on-chain only — self-reported data is unverified) ──
+    $agg_volume  = 0;
+    $agg_holders = 0;
+    $agg_floor   = [];
+    $agg_count   = 0;
+    $native      = 'ETH';
+
+    foreach ($unified_collections as $c) {
+        if (($c->data_source ?? '') !== 'onchain') {
+            continue;
+        }
+        $agg_count++;
+        $agg_volume  += (float) ($c->total_volume ?? 0);
+        $agg_holders += (int) ($c->unique_holders ?? 0);
+        if ($c->floor_price !== null && (float) $c->floor_price > 0) {
+            $agg_floor[] = (float) $c->floor_price;
+        }
+        if (!empty($c->native_token)) {
+            $native = $c->native_token;
+        }
+    }
+    $avg_floor = !empty($agg_floor) ? array_sum($agg_floor) / count($agg_floor) : 0;
+    ?>
+
+    <?php if ($agg_count > 0 && function_exists('bcc_render_onchain_stats')) : ?>
+    <section class="bcc-section bcc-section-onchain-stats">
+        <?php
+        bcc_render_onchain_stats([
+            'Verified Collections' => $agg_count,
+            'Total Volume'         => bcc_format_number($agg_volume) . ' ' . $native,
+            'Avg Floor'            => $avg_floor > 0 ? bcc_format_number($avg_floor) . ' ' . $native : '—',
+            'Total Holders'        => number_format($agg_holders),
+        ], $onchain_fetched_at, [
+            'title' => 'On-Chain Collection Metrics',
+        ]);
+        ?>
+    </section>
+    <?php endif; ?>
+
+    <?php if ($has_collections && function_exists('bcc_render_onchain_cards')) : ?>
+    <section class="bcc-section bcc-section-collections-unified">
+        <?php
+        $cpage = max(1, absint($_GET['cpage'] ?? 1));
+        $per_page = 8;
+        $total = count($unified_collections);
+        $paged_items = array_slice($unified_collections, ($cpage - 1) * $per_page, $per_page);
+
+        bcc_render_onchain_cards($paged_items, $total, [
+            'title'         => 'NFT Collections',
+            'type'          => 'collection',
+            'per_page'      => $per_page,
+            'current_page'  => $cpage,
+            'fetched_at'    => $onchain_fetched_at,
+            'card_renderer' => 'bcc_render_collection_card',
+        ]);
+        ?>
+    </section>
+    <?php elseif (!$has_collections) : ?>
+    <section class="bcc-section bcc-section-collections-unified">
         <?php bcc_section_header('NFT Collections', 'user'); ?>
+        <p class="bcc-onchain-empty">No collections found. Connect a wallet to auto-fill on-chain data, or add collections manually.</p>
+    </section>
+    <?php endif; ?>
+
+    <?php if ($can_edit) : ?>
+    <!-- ======================================================
+        ADD / EDIT COLLECTIONS (Owner Only)
+    ====================================================== -->
+    <section class="bcc-section bcc-section-collections-edit">
+        <?php bcc_section_header('Manage Collections', 'user'); ?>
 
         <?php
         bcc_render_repeater_slider([
             'post_id' => $nft_id,
             'repeater_key' => 'nft_collections',
-            'can_edit' => $can_edit,
-            'empty' => 'No collections created yet',
+            'can_edit' => true,
+            'empty' => 'Add your first collection below',
             'fields' => [
-                'collection_name' => [
-                    'label' => 'Collection Name',
-                    'type' => 'text'
-                ],
-                'collection_gallery' => [
-                    'label' => 'Gallery',
-                    'type' => 'gallery'
-                ],
-                'collection_description' => [
-                    'label' => 'Description',
-                    'type' => 'textarea'
-                ],
-                'collection_chain' => [
-                    'label' => 'Chain',
-                    'type' => 'select',
-                    'options' => $network_options_str
-                ],
-                'collection_category' => [
-                    'label' => 'Category',
-                    'type' => 'select',
-                    'options' => 'pfp:PFP,art:Art,gaming:Gaming,music:Music,utility:Utility,generative:Generative'
-                ],
-                'collection_status' => [
-                    'label' => 'Status',
-                    'type' => 'select',
-                    'options' => 'minting:Minting,sold-out:Sold Out,closed:Closed'
-                ],
-                'collection_contract_address' => [
-                    'label' => 'Contract Address',
-                    'type' => 'text'
-                ],
-                'collection_total_supply' => [
-                    'label' => 'Total Supply',
-                    'type' => 'text'
-                ],
-                'collection_floor_price' => [
-                    'label' => 'Floor Price',
-                    'type' => 'text'
-                ],
-                'collection_unique_holders' => [
-                    'label' => 'Unique Holders',
-                    'type' => 'text'
-                ],
-                'collection_listed_percentage' => [
-                    'label' => 'Listed (%)',
-                    'type' => 'text'
-                ],
-                'collection_royalty_rate' => [
-                    'label' => 'Royalty Rate (%)',
-                    'type' => 'text'
-                ],
-                'collection_mint_url' => [
-                    'label' => 'Mint URL',
-                    'type' => 'url'
-                ],
-                'collection_marketplace_url' => [
-                    'label' => 'Marketplace URL',
-                    'type' => 'url'
-                ],
-                'collection_x_account' => [
-                    'label' => 'X Account',
-                    'type' => 'url'
-                ]
+                'collection_name' => ['label' => 'Collection Name', 'type' => 'text'],
+                'collection_gallery' => ['label' => 'Gallery', 'type' => 'gallery'],
+                'collection_description' => ['label' => 'Description', 'type' => 'textarea'],
+                'collection_chain' => ['label' => 'Chain', 'type' => 'select', 'options' => $network_options_str],
+                'collection_category' => ['label' => 'Category', 'type' => 'select', 'options' => 'pfp:PFP,art:Art,gaming:Gaming,music:Music,utility:Utility,generative:Generative'],
+                'collection_status' => ['label' => 'Status', 'type' => 'select', 'options' => 'minting:Minting,sold-out:Sold Out,closed:Closed'],
+                'collection_contract_address' => ['label' => 'Contract Address', 'type' => 'text'],
+                'collection_total_supply' => ['label' => 'Total Supply', 'type' => 'text'],
+                'collection_floor_price' => ['label' => 'Floor Price', 'type' => 'text'],
+                'collection_unique_holders' => ['label' => 'Unique Holders', 'type' => 'text'],
+                'collection_listed_percentage' => ['label' => 'Listed (%)', 'type' => 'text'],
+                'collection_royalty_rate' => ['label' => 'Royalty Rate (%)', 'type' => 'text'],
+                'collection_mint_url' => ['label' => 'Mint URL', 'type' => 'url'],
+                'collection_marketplace_url' => ['label' => 'Marketplace URL', 'type' => 'url'],
+                'collection_x_account' => ['label' => 'X Account', 'type' => 'url'],
             ]
         ]);
         ?>
     </section>
+    <?php endif; ?>
 
     <!-- ======================================================
         SOCIAL LINKS

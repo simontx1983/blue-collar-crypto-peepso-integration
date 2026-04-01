@@ -48,9 +48,15 @@ function bcc_user_can_edit_post($post_id) {
 
 function bcc_user_is_owner($post_id) {
     if (!is_user_logged_in() || !$post_id) return false;
-    
+
+    // Delegate to the centralised Permissions class (bcc-core) which
+    // resolves ownership via PageOwnerResolver → PeepSo tables → WP post author.
+    if (class_exists('\\BCC\\Core\\Permissions\\Permissions')) {
+        return \BCC\Core\Permissions\Permissions::owns_page((int) $post_id, get_current_user_id());
+    }
+
+    // Fallback when bcc-core is not active.
     $author_id = (int) get_post_field('post_author', $post_id);
-    $user_id = get_current_user_id();
-    
-    return $author_id === $user_id;
+
+    return $author_id === get_current_user_id();
 }

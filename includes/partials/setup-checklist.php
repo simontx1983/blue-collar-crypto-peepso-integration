@@ -89,11 +89,10 @@ if (is_array($cached)) {
     $has_wallet = false;
 
     if (class_exists('\\BCC\\Core\\ServiceLocator')) {
+        // NullWalletVerificationRead returns false for both — same as defaults above.
         $walletService = \BCC\Core\ServiceLocator::resolveWalletVerificationRead();
-        if ($walletService) {
-            $has_github = $walletService->hasVerification($user_id, 'github');
-            $has_wallet = $walletService->hasVerifiedWallet($user_id);
-        }
+        $has_github = $walletService->hasVerification($user_id, 'github');
+        $has_wallet = $walletService->hasVerifiedWallet($user_id);
     }
 
     /* ── Build step list ─────────────────────────────────────── */
