@@ -19,11 +19,7 @@ class GalleryRenderer
 
     public static function render_view(int $post_id, int $row = 0): void
     {
-        $collection = GalleryRepository::get_or_create_collection(
-            $post_id,
-            get_current_user_id(),
-            $row
-        );
+        $collection = GalleryRepository::get_collection($post_id, $row);
 
         if (!$collection) {
             echo '<div class="bcc-gallery-empty">—</div>';

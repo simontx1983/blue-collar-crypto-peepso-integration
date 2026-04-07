@@ -31,6 +31,22 @@ class GalleryRepository
        COLLECTIONS
     ====================================================== */
 
+    /**
+     * Read-only collection lookup (no INSERT). Used by render_view().
+     */
+    public static function get_collection(int $post_id, int $sort_order): ?object
+    {
+        global $wpdb;
+        $table = self::collections_table();
+        return $wpdb->get_row(
+            $wpdb->prepare(
+                "SELECT * FROM $table WHERE post_id=%d AND sort_order=%d LIMIT 1",
+                $post_id,
+                $sort_order
+            )
+        );
+    }
+
     public static function get_or_create_collection(int $post_id, int $user_id, int $sort_order)
     {
         global $wpdb;

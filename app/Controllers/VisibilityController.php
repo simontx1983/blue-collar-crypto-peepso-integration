@@ -56,6 +56,14 @@ class VisibilityController
             }
         }
 
+        // Validate field against domain allowlist (mirrors InlineEditController pattern).
+        if (class_exists('\\BCC\\PeepSo\\Domain\\AbstractPageType')) {
+            $domain = \BCC\PeepSo\Domain\AbstractPageType::get_domain_for_post($post_id);
+            if ($domain && !call_user_func([$domain, 'is_valid_field'], $field)) {
+                wp_send_json_error(['message' => 'Invalid field']);
+            }
+        }
+
         if (!function_exists('bcc_set_field_visibility')) {
             wp_send_json_error([
                 'message' => 'Visibility system not available'

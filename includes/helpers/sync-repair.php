@@ -10,6 +10,10 @@ if (!function_exists('bcc_repair_engine')) {
 
 function bcc_repair_engine($page_id = null) {
 
+    if (!current_user_can('manage_options')) {
+        return ['error' => 'Permission denied'];
+    }
+
     global $wpdb;
 
     if (!function_exists('bcc_get_category_map')) {

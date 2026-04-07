@@ -81,6 +81,9 @@ class GalleryController
 
         if (!file_exists($base_dir)) {
             wp_mkdir_p($base_dir);
+            // Prevent direct PHP execution in the upload directory.
+            @file_put_contents($base_dir . 'index.php', '<?php // Silence is golden.');
+            @file_put_contents($base_dir . '.htaccess', "Options -ExecCGI\n<FilesMatch \"\\.php$\">\nDeny from all\n</FilesMatch>\n");
         }
 
         $allowed_mimes = [
