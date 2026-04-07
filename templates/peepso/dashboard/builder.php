@@ -169,13 +169,6 @@ $can_edit = ( $has_builder && function_exists( 'bcc_user_can_edit_post' ) ) ? bc
     <?php
     $network_ids = function_exists('get_field') ? get_field('network', $builder_id) : null;
     if ($network_ids && !empty($network_ids)):
-        $network_names = [];
-        foreach ($network_ids as $network_id) {
-            $network_post = get_post($network_id);
-            if ($network_post) {
-                $network_names[] = esc_html($network_post->post_title);
-            }
-        }
     ?>
     <section class="bcc-section bcc-section-network">
         <?php bcc_section_header('Primary Network', 'user'); ?>

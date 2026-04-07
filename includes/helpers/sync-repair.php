@@ -165,33 +165,6 @@ function bcc_repair_engine($page_id = null) {
 
 
 /* ----------------------------------------------------
-   FRONTEND SAFE REGEN
----------------------------------------------------- */
-
-if (!function_exists('bcc_regenerate_validator_from_page')) {
-
-function bcc_regenerate_validator_from_page($page_id) {
-
-    if (!$page_id) return false;
-
-    bcc_repair_engine($page_id);
-
-    $validator = get_posts([
-        'post_type'      => 'validators',
-        'meta_key'       => '_peepso_page_id',
-        'meta_value'     => $page_id,
-        'posts_per_page' => 1,
-        'fields'         => 'ids'
-    ]);
-
-    return $validator ? (int) $validator[0] : false;
-}
-
-}
-
-
-
-/* ----------------------------------------------------
    ADMIN UI
 ---------------------------------------------------- */
 

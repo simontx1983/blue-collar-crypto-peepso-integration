@@ -3,20 +3,6 @@
     'use strict';
 
     /* ======================================================
-       DEBUG MODE - Set to false for production
-    ====================================================== */
-    const DEBUG_MODE = false; // Set to false for production
-
-    /* ======================================================
-       HTML ESCAPE HELPER
-    ====================================================== */
-    function escHtml(str) {
-        const div = document.createElement('div');
-        div.appendChild(document.createTextNode(String(str)));
-        return div.innerHTML;
-    }
-
-    /* ======================================================
        TOAST NOTIFICATION SYSTEM
     ====================================================== */
     window.bccToast = function(msg, type = "success", duration = 2200) {
@@ -118,44 +104,6 @@
         }, data));
     };
 
-    function initDashboardTabs() {
-        $('[data-bcc-dashboard-tabs]').each(function() {
-            const $nav = $(this);
-            const $inner = $nav.find('.bcc-dashboard-tabs-inner');
-            const $active = $inner.find('.bcc-tab.active').first();
-
-            if (!$inner.length) return;
-
-            const updateOverflowState = function() {
-                const el = $inner.get(0);
-                if (!el) return;
-
-                const isScrollable = el.scrollWidth > el.clientWidth + 4;
-                $nav.toggleClass('is-scrollable', isScrollable);
-                $nav.toggleClass('is-at-start', !isScrollable || el.scrollLeft <= 4);
-                $nav.toggleClass('is-at-end', !isScrollable || (el.scrollLeft + el.clientWidth) >= (el.scrollWidth - 4));
-            };
-
-            updateOverflowState();
-            $inner.off('scroll.bccTabs').on('scroll.bccTabs', updateOverflowState);
-
-            if ($active.length && window.innerWidth <= 768) {
-                const innerEl = $inner.get(0);
-                const activeEl = $active.get(0);
-
-                if (innerEl && activeEl) {
-                    const offset = activeEl.offsetLeft - ((innerEl.clientWidth - activeEl.offsetWidth) / 2);
-                    innerEl.scrollTo({
-                        left: Math.max(0, offset),
-                        behavior: 'smooth'
-                    });
-                }
-            }
-
-            $(window).off('resize.bccTabs').on('resize.bccTabs', updateOverflowState);
-        });
-    }
-
     /* ======================================================
        GALLERY SLIDER
     ====================================================== */
@@ -247,10 +195,6 @@
         const postId = parseInt($container.data('post'), 10);
         const row    = parseInt($container.data('row'), 10);
         
-        if (DEBUG_MODE) {
-            console.log('Initializing gallery for post:', postId, 'row:', row);
-        }
-
         initUpload($container, postId, row);
         initDelete($container, postId, row);
         initDragSort($container, postId, row);
@@ -334,12 +278,6 @@
             const containerPostId = parseInt($container.data('post'), 10);
             const containerRow = parseInt($container.data('row'), 10);
             
-            if (DEBUG_MODE) {
-                console.log('Delete clicked:', { imageId, postId: containerPostId, row: containerRow });
-                window.bccToast('DEBUG: Would delete image ' + imageId, 'success');
-                return;
-            }
-
             if (!imageId || isNaN(imageId) || !containerPostId || isNaN(containerPostId)) {
                 window.bccToast('Invalid image data', 'error');
                 return;
@@ -586,7 +524,7 @@
         const html = `
             <div class="bcc-gallery-thumb-wrapper" draggable="true" data-id="${parseInt(img.id, 10) || 0}">
                 <input type="checkbox" class="bcc-thumb-select">
-                <img src="${escHtml(img.thumbnail || img.url)}" loading="lazy" alt="">
+                <img src="${window.bccEscapeHtml(img.thumbnail || img.url)}" loading="lazy" alt="">
                 <span class="bcc-gallery-remove">×</span>
             </div>
         `;
@@ -619,7 +557,7 @@
             images.forEach(function(img, index) {
                 const activeClass = index === 0 ? 'active' : '';
                 sliderHtml += `<div class="bcc-slider-item ${activeClass}">`;
-                sliderHtml += `<img src="${escHtml(img.url)}" loading="lazy" alt="">`;
+                sliderHtml += `<img src="${window.bccEscapeHtml(img.url)}" loading="lazy" alt="">`;
                 sliderHtml += '</div>';
             });
 
@@ -805,133 +743,6 @@
     }
 
     /* ======================================================
-       REPEATER ROW DRAG & DROP
-    ====================================================== */
-
-    function initRepeaterDragSort($container) {
-        const $rows = $container.find('.bcc-slide');
-        if (!$rows.length) return;
-
-        let draggedRow = null;
-        let dragStarted = false;
-
-        // Make rows draggable via the handle
-        $rows.each(function() {
-            const $row = $(this);
-            const $handle = $row.find('.bcc-drag-handle');
-            
-            if ($handle.length) {
-                $handle.css('cursor', 'grab');
-                
-                $handle.on('mousedown', function(e) {
-                    e.preventDefault(); // Prevent text selection
-                    $row.attr('draggable', true);
-                });
-                
-                $handle.on('mouseup', function() {
-                    $row.attr('draggable', false);
-                });
-            }
-            
-            // Remove draggable from elements that shouldn't be draggable
-            $row.find('input, textarea, select, button, a').on('mousedown', function(e) {
-                e.stopPropagation();
-            });
-        });
-
-        // Remove any previously bound drag handlers to prevent stacking
-        $container.off('.bccRepeaterDrag');
-
-        $container.on('dragstart.bccRepeaterDrag', '.bcc-slide', function(e) {
-            // Only allow drag if starting from the handle
-            if (!$(e.target).closest('.bcc-drag-handle').length) {
-                e.preventDefault();
-                return false;
-            }
-            
-            draggedRow = this;
-            dragStarted = true;
-            $(this).addClass('is-dragging');
-            
-            e.originalEvent.dataTransfer.setData('text/plain', $(this).data('row') || '0');
-            e.originalEvent.dataTransfer.effectAllowed = 'move';
-            
-            // Hide default drag image
-            const img = new Image();
-            img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=';
-            e.originalEvent.dataTransfer.setDragImage(img, 0, 0);
-            
-            // Prevent default to avoid issues
-            e.stopPropagation();
-        });
-
-        $container.on('dragover.bccRepeaterDrag', '.bcc-slide', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            if (!draggedRow || draggedRow === this || !dragStarted) return;
-
-            const rect = this.getBoundingClientRect();
-            const after = (e.originalEvent.clientY - rect.top) > rect.height / 2;
-
-            if (after) {
-                this.parentNode.insertBefore(draggedRow, this.nextSibling);
-            } else {
-                this.parentNode.insertBefore(draggedRow, this);
-            }
-        });
-
-        $container.on('dragend.bccRepeaterDrag', '.bcc-slide', function() {
-            $(this).removeClass('is-dragging').attr('draggable', false);
-            
-            if (draggedRow && dragStarted) {
-                setTimeout(() => {
-                    saveRepeaterOrder($container);
-                }, 50);
-            }
-            
-            draggedRow = null;
-            dragStarted = false;
-        });
-
-        // Prevent default on container
-        $container.on('dragover.bccRepeaterDrag dragenter.bccRepeaterDrag dragleave.bccRepeaterDrag drop.bccRepeaterDrag', function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        });
-    }
-
-    function saveRepeaterOrder($container) {
-        const $wrapper = $container.closest('.bcc-repeater-wrapper');
-        const $btn = $wrapper.find('.bcc-add-repeater');
-        const postId = $btn.data('post');
-        const field = $btn.data('field');
-
-        if (!postId || !field) return;
-
-        // Collect OLD data-row values (DB indices) in the NEW visual order,
-        // then update DOM attributes to reflect the new sequential order.
-        const order = [];
-        $container.find('.bcc-slide').each(function(index) {
-            order.push(parseInt($(this).data('row'), 10));
-            $(this).attr('data-row', index);
-            $(this).find('.bcc-delete-repeater').attr('data-row', index);
-        });
-
-        window.bccPost('bcc_repeater_reorder_rows', {
-            post_id: postId,
-            field: field,
-            order: order
-        }).done(function(res) {
-            if (res && res.success) {
-                window.bccToast('Rows reordered');
-            }
-        }).fail(function() {
-            window.bccToast('Failed to save order', 'error');
-        });
-    }
-
-    /* ======================================================
        VISIBILITY POPOVER
     ====================================================== */
 
@@ -1104,12 +915,6 @@
             return;
         }
         
-        if (DEBUG_MODE) {
-            console.log('🔧 DEBUG MODE - Would delete row:', { postId, field, rowIndex });
-            window.bccToast('DEBUG: Would delete row ' + rowIndex, 'success');
-            return;
-        }
-        
         if (!confirm('Delete this entire item?')) return;
 
         // Find the slide container
@@ -1179,15 +984,8 @@
             initGallery($(this));
         });
 
-        initDashboardTabs();
-
         // Initialize sliders
         window.initGallerySlider();
-
-        // Initialize repeater drag sort
-        $('.bcc-repeater-rows').each(function() {
-            initRepeaterDragSort($(this));
-        });
 
         // Initialize lightbox
         initLightbox();
@@ -1203,13 +1001,6 @@
     // Re-initialize when new galleries are added
     $(document).on('bcc-gallery-updated', function() {
         window.initGallerySlider();
-    });
-
-    // Re-initialize when repeater rows are updated
-    $(document).on('bcc-repeater-updated', function() {
-        $('.bcc-repeater-rows').each(function() {
-            initRepeaterDragSort($(this));
-        });
     });
 
     // Inline edit event handlers

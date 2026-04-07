@@ -76,33 +76,12 @@ function bcc_init() {
         return;
     }
 
-    // Register Dashboard Tab
-    add_filter('peepso_page_segment_menu_links', 'bcc_register_dashboard_tab');
-
     // Translations
     load_plugin_textdomain(
         'blue-collar-crypto',
         false,
         dirname(plugin_basename(__FILE__)) . '/languages'
     );
-}
-
-/**
- * ==========================================================
- * Dashboard Tab Registration
- * ==========================================================
- */
-function bcc_register_dashboard_tab($segments) {
-
-    if (isset($segments[0])) {
-        $segments[0][] = [
-            'href'  => 'dashboard',
-            'title' => __('Dashboard', 'blue-collar-crypto'),
-            'icon'  => 'gsi gsi-dashboard',
-        ];
-    }
-
-    return $segments;
 }
 
 

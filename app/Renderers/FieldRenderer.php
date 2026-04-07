@@ -13,8 +13,6 @@ use BCC\PeepSo\Helpers\OptionsHelper;
  */
 class FieldRenderer
 {
-    private array $args;
-
     private int $post_id;
     private string $field;
     private string $label;
@@ -33,7 +31,7 @@ class FieldRenderer
 
     public function __construct(array $args = [])
     {
-        $this->args = wp_parse_args($args, [
+        $a = wp_parse_args($args, [
             'post_id'  => 0,
             'field'    => '',
             'label'    => '',
@@ -46,16 +44,16 @@ class FieldRenderer
             'row'      => 0
         ]);
 
-        $this->post_id  = (int) $this->args['post_id'];
-        $this->field    = (string) $this->args['field'];
-        $this->label    = (string) $this->args['label'];
-        $this->value    = $this->args['value'];
-        $this->type     = (string) $this->args['type'];
-        $this->options  = (string) $this->args['options'];
-        $this->can_edit = (bool) $this->args['can_edit'];
-        $this->repeater = (bool) $this->args['repeater'];
-        $this->sub      = (string) $this->args['sub'];
-        $this->row      = (int) $this->args['row'];
+        $this->post_id  = (int) $a['post_id'];
+        $this->field    = (string) $a['field'];
+        $this->label    = (string) $a['label'];
+        $this->value    = $a['value'];
+        $this->type     = (string) $a['type'];
+        $this->options  = (string) $a['options'];
+        $this->can_edit = (bool) $a['can_edit'];
+        $this->repeater = (bool) $a['repeater'];
+        $this->sub      = (string) $a['sub'];
+        $this->row      = (int) $a['row'];
     }
 
     /* ======================================================

@@ -81,12 +81,6 @@ require_once BCC_INCLUDES_PATH . 'peepso/segments.php';
 require_once BCC_INCLUDES_PATH . 'peepso/trust-header-injection.php';
 
 /* ======================================================
-   GUTENBERG BLOCKS
-====================================================== */
-
-require_once BCC_INCLUDES_PATH . 'blocks.php';
-
-/* ======================================================
    UI
 ====================================================== */
 

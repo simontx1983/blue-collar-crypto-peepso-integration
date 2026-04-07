@@ -40,7 +40,7 @@ class RepeaterRenderer
             self::renderRows($rows, $a);
         }
 
-        self::closeWrapper($a);
+        self::closeWrapper();
     }
 
     private static function openWrapper(int $post_id, string $repeater_key): void
@@ -136,7 +136,7 @@ class RepeaterRenderer
         }
     }
 
-    private static function closeWrapper(array $args): void
+    private static function closeWrapper(): void
     {
         echo '</div>';
     }
