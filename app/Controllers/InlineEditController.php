@@ -7,6 +7,8 @@ if (!defined('ABSPATH')) {
 }
 
 use BCC\PeepSo\Domain\AbstractPageType;
+use BCC\PeepSo\Security\AjaxSecurity;
+use BCC\Core\Security\Throttle;
 
 /**
  * AJAX – Inline Field Save Controller (Domain Aware)
@@ -26,6 +28,10 @@ class InlineEditController
     public static function handle(): void
     {
         check_ajax_referer('bcc_nonce', 'nonce');
+
+        if (!Throttle::allow('inline_edit', 30, 60)) {
+            wp_send_json_error(['message' => 'Too many requests.'], 429);
+        }
 
         if (!function_exists('update_field')) {
             wp_send_json_error('ACF not active');
@@ -58,15 +64,7 @@ class InlineEditController
             wp_send_json_error('Missing required data');
         }
 
-        if (function_exists('bcc_user_can_edit_post')) {
-            if (!bcc_user_can_edit_post($post_id)) {
-                wp_send_json_error('Permission denied');
-            }
-        } else {
-            if (!current_user_can('edit_post', $post_id)) {
-                wp_send_json_error('Permission denied');
-            }
-        }
+        AjaxSecurity::require_edit_permission($post_id);
 
         $domain = self::getDomainClass($post_id);
 

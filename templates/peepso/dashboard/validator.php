@@ -23,33 +23,24 @@ $onchain_validators = ['items' => [], 'total' => 0];
 $onchain_stats = [];
 $onchain_fetched_at = '';
 
-if ($has_validator && class_exists('\\BCC\\Onchain\\Repositories\\ValidatorRepository')) {
+if ($has_validator && class_exists('\\BCC\\Core\\ServiceLocator')) {
+    $onchain = \BCC\Core\ServiceLocator::resolveOnchainDataRead();
+
     $current_page = max( 1, absint( $_GET['vpage'] ?? 1 ) );
-    $onchain_validators = \BCC\Onchain\Repositories\ValidatorRepository::getForProject($validator_id, $current_page, 8, 'total_stake');
+    $onchain_validators = $onchain->getValidatorsForProject($validator_id, $current_page, 8, 'total_stake');
     $has_onchain = $onchain_validators['total'] > 0;
 
     if ($has_onchain) {
-        // Build aggregate stats from all validator rows
         $first = $onchain_validators['items'][0] ?? null;
         $onchain_fetched_at = $first->fetched_at ?? '';
 
-        // Aggregate across all chains
-        $all_validators = \BCC\Onchain\Repositories\ValidatorRepository::getForProject($validator_id, 1, 999);
-        $total_stake = 0;
-        $total_delegators = 0;
-        $active_count = 0;
-        $chains_count = count($all_validators['items']);
-
-        foreach ($all_validators['items'] as $v) {
-            $total_stake     += (float) ($v->total_stake ?? 0);
-            $total_delegators += (int) ($v->delegator_count ?? 0);
-            if ($v->status === 'active') $active_count++;
-        }
+        // Pre-computed aggregate stats via interface (single query instead of two)
+        $agg = $onchain->getValidatorAggregateStats($validator_id);
 
         $onchain_stats = [
-            'Active Chains'     => $active_count . ' / ' . $chains_count,
-            'Total Stake'       => function_exists('bcc_format_number') ? bcc_format_number($total_stake) : number_format($total_stake),
-            'Total Delegators'  => number_format($total_delegators),
+            'Active Chains'     => $agg['active_count'] . ' / ' . $agg['chains_count'],
+            'Total Stake'       => function_exists('bcc_format_number') ? bcc_format_number($agg['total_stake']) : number_format($agg['total_stake']),
+            'Total Delegators'  => number_format($agg['total_delegators']),
         ];
 
         // Add top-chain-specific stats

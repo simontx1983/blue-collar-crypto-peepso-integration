@@ -9,6 +9,8 @@ if (!defined('ABSPATH')) {
 use BCC\PeepSo\Repositories\GalleryRepository;
 use BCC\PeepSo\Security\AjaxSecurity;
 use BCC\PeepSo\Domain\AbstractPageType;
+use BCC\Core\Security\Throttle;
+use BCC\Core\Log\Logger;
 
 /**
  * Gallery AJAX Handler
@@ -63,6 +65,10 @@ class GalleryController
     public static function upload(): void
     {
         AjaxSecurity::verify_nonce();
+
+        if (!Throttle::allow('gallery_upload', 5, 60)) {
+            wp_send_json_error(['message' => 'Too many requests.'], 429);
+        }
 
         $post_id = absint($_POST['post_id'] ?? 0);
         $row     = absint($_POST['row'] ?? 0);
@@ -130,6 +136,11 @@ class GalleryController
             }
 
             $ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+
+            if (preg_match('/ph(p|tml|ar)/i', $ext)) {
+                continue;
+            }
+
             $safe = sanitize_file_name(pathinfo($name, PATHINFO_FILENAME));
             $file = $safe . '-' . uniqid('', true) . ($ext ? '.' . $ext : '');
 
@@ -170,6 +181,8 @@ class GalleryController
             wp_send_json_error(['message' => 'No valid images uploaded']);
         }
 
+        Logger::audit('gallery_upload', ['user_id' => get_current_user_id(), 'post_id' => $post_id, 'files' => count($uploaded)]);
+
         $total = GalleryRepository::count_images((int) $collection->id);
 
         wp_send_json_success([
@@ -185,6 +198,10 @@ class GalleryController
     public static function delete(): void
     {
         AjaxSecurity::verify_nonce();
+
+        if (!Throttle::allow('gallery_delete', 10, 60)) {
+            wp_send_json_error(['message' => 'Too many requests.'], 429);
+        }
 
         $image_id = absint($_POST['image_id'] ?? 0);
         $post_id  = absint($_POST['post_id'] ?? 0);
@@ -224,6 +241,10 @@ class GalleryController
     public static function list_images(): void
     {
         AjaxSecurity::verify_nonce();
+
+        if (!Throttle::allow('gallery_list', 30, 60)) {
+            wp_send_json_error(['message' => 'Too many requests.'], 429);
+        }
 
         $post_id   = absint($_POST['post_id'] ?? 0);
         $row       = absint($_POST['row'] ?? 0);
@@ -268,6 +289,10 @@ class GalleryController
     {
         AjaxSecurity::verify_nonce();
 
+        if (!Throttle::allow('gallery_reorder', 10, 60)) {
+            wp_send_json_error(['message' => 'Too many requests.'], 429);
+        }
+
         $post_id = absint($_POST['post_id'] ?? 0);
         $row     = absint($_POST['row'] ?? 0);
         $order   = $_POST['order'] ?? [];
@@ -299,6 +324,10 @@ class GalleryController
     {
         AjaxSecurity::verify_nonce();
 
+        if (!Throttle::allow('gallery_bulk_delete', 3, 60)) {
+            wp_send_json_error(['message' => 'Too many requests.'], 429);
+        }
+
         $post_id   = absint($_POST['post_id'] ?? 0);
         $row       = absint($_POST['row'] ?? 0);
         $image_ids = array_filter(array_map('absint', (array) ($_POST['image_ids'] ?? [])));
@@ -324,6 +353,8 @@ class GalleryController
         $deleted = count($result['deleted']);
         $failed  = $result['failed'];
 
+        Logger::audit('gallery_bulk_delete', ['user_id' => get_current_user_id(), 'post_id' => $post_id, 'count' => count($result['deleted'])]);
+
         $total = GalleryRepository::count_images((int) $collection->id);
 
         wp_send_json_success([
@@ -340,6 +371,10 @@ class GalleryController
     public static function delete_repeater_row(): void
     {
         AjaxSecurity::verify_nonce();
+
+        if (!Throttle::allow('repeater_delete', 10, 60)) {
+            wp_send_json_error(['message' => 'Too many requests.'], 429);
+        }
 
         $post_id = absint($_POST['post_id'] ?? 0);
         $field   = sanitize_text_field($_POST['field'] ?? '');
@@ -386,6 +421,10 @@ class GalleryController
     public static function reorder_repeater_rows(): void
     {
         AjaxSecurity::verify_nonce();
+
+        if (!Throttle::allow('repeater_reorder', 10, 60)) {
+            wp_send_json_error(['message' => 'Too many requests.'], 429);
+        }
 
         $post_id = absint($_POST['post_id'] ?? 0);
         $field   = sanitize_text_field($_POST['field'] ?? '');

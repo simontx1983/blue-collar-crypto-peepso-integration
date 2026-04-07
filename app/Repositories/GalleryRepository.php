@@ -114,6 +114,8 @@ class GalleryRepository
             )
         );
 
+        $wpdb->query('START TRANSACTION');
+
         $inserted = $wpdb->insert(
             $table,
             [
@@ -128,6 +130,7 @@ class GalleryRepository
         );
 
         if ($inserted === false) {
+            $wpdb->query('ROLLBACK');
             if (class_exists('BCC\\Core\\Log\\Logger')) {
                 \BCC\Core\Log\Logger::error('[bcc-peepso] image_insert_failed', [
                     'collection_id' => $collection_id,
@@ -150,6 +153,12 @@ class GalleryRepository
             )
         );
 
+        if ($wpdb->last_error) {
+            $wpdb->query('ROLLBACK');
+            return 0;
+        }
+
+        $wpdb->query('COMMIT');
         return $image_id;
     }
 
@@ -269,12 +278,20 @@ class GalleryRepository
         if (!empty($deleted)) {
             $del_ids = array_map(function ($img) { return (int) $img->id; }, $deleted);
             $del_placeholders = implode(',', array_fill(0, count($del_ids), '%d'));
+
+            $wpdb->query('START TRANSACTION');
+
             $wpdb->query(
                 $wpdb->prepare(
                     "DELETE FROM $table WHERE id IN ($del_placeholders)",
                     ...$del_ids
                 )
             );
+
+            if ($wpdb->last_error) {
+                $wpdb->query('ROLLBACK');
+                return ['deleted' => [], 'failed' => $image_ids];
+            }
 
             $wpdb->query(
                 $wpdb->prepare(
@@ -285,6 +302,13 @@ class GalleryRepository
                     $collection_id
                 )
             );
+
+            if ($wpdb->last_error) {
+                $wpdb->query('ROLLBACK');
+                return ['deleted' => [], 'failed' => $image_ids];
+            }
+
+            $wpdb->query('COMMIT');
         }
 
         return ['deleted' => $deleted, 'failed' => $failed];
@@ -314,7 +338,14 @@ class GalleryRepository
 
         if (!$image) return false;
 
+        $wpdb->query('START TRANSACTION');
+
         $wpdb->delete($table, ['id' => $image_id], ['%d']);
+
+        if ($wpdb->last_error) {
+            $wpdb->query('ROLLBACK');
+            return false;
+        }
 
         $wpdb->query(
             $wpdb->prepare(
@@ -325,6 +356,12 @@ class GalleryRepository
             )
         );
 
+        if ($wpdb->last_error) {
+            $wpdb->query('ROLLBACK');
+            return false;
+        }
+
+        $wpdb->query('COMMIT');
         return $image;
     }
 }

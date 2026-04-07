@@ -18,6 +18,10 @@ class AjaxSecurity
 
     public static function require_edit_permission(int $post_id): void
     {
+        if (class_exists('\\BCC\\Core\\Permissions\\Permissions') && !\BCC\Core\Permissions\Permissions::is_not_suspended()) {
+            wp_send_json_error(['message' => 'Account suspended']);
+        }
+
         if (function_exists('bcc_user_can_edit_post')) {
             if (!bcc_user_can_edit_post($post_id)) {
                 wp_send_json_error(['message' => 'Permission denied']);

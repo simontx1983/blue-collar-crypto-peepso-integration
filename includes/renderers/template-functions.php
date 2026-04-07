@@ -135,3 +135,46 @@ if (!function_exists('bcc_render_repeater_slider')) {
         }
     }
 }
+
+/**
+ * Aggregate on-chain collection stats from a merged collection list.
+ *
+ * Extracts volume, holder count, and average floor price from items
+ * tagged as 'onchain' (self-reported items are excluded). Keeps
+ * aggregation logic out of templates.
+ *
+ * @param array $collections Merged collection list (objects with data_source, total_volume, etc.).
+ * @return array{count: int, volume: float, holders: int, avg_floor: float, native_token: string}
+ */
+if (!function_exists('bcc_aggregate_collection_stats')) {
+    function bcc_aggregate_collection_stats(array $collections): array {
+        $volume  = 0.0;
+        $holders = 0;
+        $floors  = [];
+        $count   = 0;
+        $native  = 'ETH';
+
+        foreach ($collections as $c) {
+            if (($c->data_source ?? '') !== 'onchain') {
+                continue;
+            }
+            $count++;
+            $volume  += (float) ($c->total_volume ?? 0);
+            $holders += (int) ($c->unique_holders ?? 0);
+            if ($c->floor_price !== null && (float) $c->floor_price > 0) {
+                $floors[] = (float) $c->floor_price;
+            }
+            if (!empty($c->native_token)) {
+                $native = $c->native_token;
+            }
+        }
+
+        return [
+            'count'        => $count,
+            'volume'       => $volume,
+            'holders'      => $holders,
+            'avg_floor'    => !empty($floors) ? array_sum($floors) / count($floors) : 0.0,
+            'native_token' => $native,
+        ];
+    }
+}

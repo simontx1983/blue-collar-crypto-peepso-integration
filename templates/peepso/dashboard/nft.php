@@ -101,13 +101,15 @@ $network_options_str = implode(',', $network_options);
     $onchain_fetched_at = '';
     $owner_id       = 0;
 
-    // ── Load on-chain collection data ──
-    if ($has_nft && class_exists('\\BCC\\Onchain\\Services\\CollectionService')) {
+    // ── Load on-chain collection data via ServiceLocator ──
+    if ($has_nft && class_exists('\\BCC\\Core\\ServiceLocator')) {
+        $onchain = \BCC\Core\ServiceLocator::resolveOnchainDataRead();
+
         // Page owners see ALL collections (including hidden) so they can
         // toggle visibility back on. Public viewers see only visible ones.
         $all_onchain = $can_edit
-            ? \BCC\Onchain\Services\CollectionService::getForProject($nft_id, 1, 999, 'total_volume', true)
-            : \BCC\Onchain\Services\CollectionService::getAllForProject($nft_id);
+            ? $onchain->getCollectionsForProject($nft_id, 1, 999, 'total_volume', true)
+            : $onchain->getAllCollectionsForProject($nft_id);
         $onchain_items = $all_onchain['items'] ?? [];
 
         if (!empty($onchain_items)) {
@@ -119,7 +121,7 @@ $network_options_str = implode(',', $network_options);
         }
 
         // Enrich with badge flags
-        $onchain_items = \BCC\Onchain\Services\CollectionService::enrichWithBadges(
+        $onchain_items = $onchain->enrichCollectionsWithBadges(
             $onchain_items,
             $owner_id,
             $viewer_id
@@ -138,8 +140,8 @@ $network_options_str = implode(',', $network_options);
 
     // ── Merge + Deduplicate ──
     $unified_collections = [];
-    if (class_exists('\\BCC\\Onchain\\Services\\CollectionService')) {
-        $unified_collections = \BCC\Onchain\Services\CollectionService::mergeWithManual($onchain_items, $manual_rows);
+    if (class_exists('\\BCC\\Core\\ServiceLocator') && isset($onchain)) {
+        $unified_collections = $onchain->mergeCollectionsWithManual($onchain_items, $manual_rows);
     } elseif (!empty($manual_rows)) {
         // No on-chain plugin — show all manual rows as self-reported
         foreach ($manual_rows as $row) {
@@ -169,28 +171,13 @@ $network_options_str = implode(',', $network_options);
 
     $has_collections = !empty($unified_collections);
 
-    // ── Aggregate stats (on-chain only — self-reported data is unverified) ──
-    $agg_volume  = 0;
-    $agg_holders = 0;
-    $agg_floor   = [];
-    $agg_count   = 0;
-    $native      = 'ETH';
-
-    foreach ($unified_collections as $c) {
-        if (($c->data_source ?? '') !== 'onchain') {
-            continue;
-        }
-        $agg_count++;
-        $agg_volume  += (float) ($c->total_volume ?? 0);
-        $agg_holders += (int) ($c->unique_holders ?? 0);
-        if ($c->floor_price !== null && (float) $c->floor_price > 0) {
-            $agg_floor[] = (float) $c->floor_price;
-        }
-        if (!empty($c->native_token)) {
-            $native = $c->native_token;
-        }
-    }
-    $avg_floor = !empty($agg_floor) ? array_sum($agg_floor) / count($agg_floor) : 0;
+    // Aggregate stats (on-chain only — self-reported data is unverified).
+    // Logic lives in bcc_aggregate_collection_stats(); template only renders.
+    $coll_agg  = function_exists('bcc_aggregate_collection_stats')
+        ? bcc_aggregate_collection_stats($unified_collections)
+        : ['count' => 0, 'volume' => 0.0, 'holders' => 0, 'avg_floor' => 0.0, 'native_token' => 'ETH'];
+    $agg_count = $coll_agg['count'];
+    $native    = $coll_agg['native_token'];
     ?>
 
     <?php if ($agg_count > 0 && function_exists('bcc_render_onchain_stats')) : ?>
@@ -198,9 +185,9 @@ $network_options_str = implode(',', $network_options);
         <?php
         bcc_render_onchain_stats([
             'Verified Collections' => $agg_count,
-            'Total Volume'         => bcc_format_number($agg_volume) . ' ' . $native,
-            'Avg Floor'            => $avg_floor > 0 ? bcc_format_number($avg_floor) . ' ' . $native : '—',
-            'Total Holders'        => number_format($agg_holders),
+            'Total Volume'         => bcc_format_number($coll_agg['volume']) . ' ' . $native,
+            'Avg Floor'            => $coll_agg['avg_floor'] > 0 ? bcc_format_number($coll_agg['avg_floor']) . ' ' . $native : '—',
+            'Total Holders'        => number_format($coll_agg['holders']),
         ], $onchain_fetched_at, [
             'title' => 'On-Chain Collection Metrics',
         ]);

@@ -6,6 +6,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+use BCC\PeepSo\Security\AjaxSecurity;
+use BCC\Core\Security\Throttle;
+
 /**
  * AJAX – Field Visibility Controller
  */
@@ -22,6 +25,10 @@ class VisibilityController
             wp_send_json_error([
                 'message' => 'Security check failed'
             ]);
+        }
+
+        if (!Throttle::allow('visibility', 20, 60)) {
+            wp_send_json_error(['message' => 'Too many requests.'], 429);
         }
 
         $post_id    = absint($_POST['post_id'] ?? 0);
@@ -42,19 +49,7 @@ class VisibilityController
             ]);
         }
 
-        if (function_exists('bcc_user_can_edit_post')) {
-            if (!bcc_user_can_edit_post($post_id)) {
-                wp_send_json_error([
-                    'message' => 'Permission denied'
-                ]);
-            }
-        } else {
-            if (!current_user_can('edit_post', $post_id)) {
-                wp_send_json_error([
-                    'message' => 'Permission denied'
-                ]);
-            }
-        }
+        AjaxSecurity::require_edit_permission($post_id);
 
         // Validate field against domain allowlist (mirrors InlineEditController pattern).
         if (class_exists('\\BCC\\PeepSo\\Domain\\AbstractPageType')) {
