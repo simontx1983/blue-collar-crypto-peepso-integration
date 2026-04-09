@@ -13,7 +13,7 @@ if (!function_exists('bcc_render_divider')) {
 
 if (!function_exists('bcc_render_row')) {
     function bcc_render_row(array $args = []): void {
-        $renderer = new BCC_Field_Renderer($args);
+        $renderer = new \BCC\PeepSo\Renderers\FieldRenderer($args);
         $renderer->render();
     }
 }
@@ -128,8 +128,8 @@ if (!function_exists('bcc_section_header')) {
 
 if (!function_exists('bcc_render_repeater_slider')) {
     function bcc_render_repeater_slider(array $args = []): void {
-        if (class_exists('BCC_Repeater_Renderer')) {
-            BCC_Repeater_Renderer::render($args);
+        if (class_exists('\\BCC\\PeepSo\\Renderers\\RepeaterRenderer')) {
+            \BCC\PeepSo\Renderers\RepeaterRenderer::render($args);
         } else {
             echo '<p>Repeater renderer not available.</p>';
         }

@@ -112,14 +112,12 @@ abstract class AbstractPageType
      * Domain map uses LEGACY class names because:
      * 1. Bridge classes extend these namespaced classes
      * 2. The map values are used with class_exists() and dynamic static calls
-     * 3. Legacy names are guaranteed to be loaded (bridge files are require_once'd)
-     * 4. This preserves backward compat if external code reads the map
      */
     private static array $domain_map = [
-        'validators' => 'BCC_Domain_Validator',
-        'nft'        => 'BCC_Domain_NFT',
-        'builder'    => 'BCC_Domain_Builder',
-        'dao'        => 'BCC_Domain_DAO',
+        'validators' => \BCC\PeepSo\Domain\ValidatorPageType::class,
+        'nft'        => \BCC\PeepSo\Domain\NftPageType::class,
+        'builder'    => \BCC\PeepSo\Domain\BuilderPageType::class,
+        'dao'        => \BCC\PeepSo\Domain\DaoPageType::class,
     ];
 
     public static function resolve(string $post_type): ?string

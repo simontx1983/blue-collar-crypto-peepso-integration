@@ -140,7 +140,7 @@ function bcc_repair_engine($page_id = null) {
                    Create missing CPT
                 ---------------------------- */
 
-                $cpt_id = BCC_Domain_Abstract::create_from_page_by_type($page->ID, $cpt);
+                $cpt_id = BCCPeepSoDomainAbstractPageType::create_from_page_by_type($page->ID, $cpt);
 
                 if (!$cpt_id) {
                     $log[] = "  ❌ Failed creating {$cpt}";

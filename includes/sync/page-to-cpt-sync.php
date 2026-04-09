@@ -151,7 +151,7 @@ add_action('shutdown', function () {
             }
 
             // Create shadow CPT via domain layer
-            $cpt_id = BCC_Domain_Abstract::create_from_page_by_type($page_id, $post_type);
+            $cpt_id = BCCPeepSoDomainAbstractPageType::create_from_page_by_type($page_id, $post_type);
 
             if (!$cpt_id) continue;
 

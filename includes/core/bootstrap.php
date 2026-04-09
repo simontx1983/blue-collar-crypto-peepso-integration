@@ -39,12 +39,7 @@ require_once BCC_INCLUDES_PATH . 'core/permissions.php';
    DOMAIN (ABSTRACT FIRST)
 ====================================================== */
 
-require_once BCC_INCLUDES_PATH . 'domain/class-bcc-domain-abstract.php';
-
-require_once BCC_INCLUDES_PATH . 'domain/validator.php';
-require_once BCC_INCLUDES_PATH . 'domain/builder.php';
-require_once BCC_INCLUDES_PATH . 'domain/dao.php';
-require_once BCC_INCLUDES_PATH . 'domain/nft.php';
+// Domain types loaded via Composer PSR-4 autoload (app/Domain/)
 
 /* ======================================================
    SYNC
@@ -56,17 +51,15 @@ require_once BCC_INCLUDES_PATH . 'sync/page-to-cpt-sync.php';
    AJAX CONTROLLERS
 ====================================================== */
 
-require_once BCC_INCLUDES_PATH . 'ajax/class-bcc-ajax-inline.php';
-require_once BCC_INCLUDES_PATH . 'ajax/class-bcc-ajax-visibility.php';
-require_once BCC_INCLUDES_PATH . 'ajax/class-bcc-ajax-gallery.php';
+\BCC\PeepSo\Controllers\InlineEditController::register();
+\BCC\PeepSo\Controllers\VisibilityController::register();
+\BCC\PeepSo\Controllers\GalleryController::register();
 
 
 /* ======================================================
    RENDERERS (Generic / Reusable)
 ====================================================== */
 
-require_once BCC_INCLUDES_PATH . 'renderers/class-bcc-field-renderer.php';
-require_once BCC_INCLUDES_PATH . 'renderers/class-bcc-repeater-renderer.php';
 require_once BCC_INCLUDES_PATH . 'renderers/template-functions.php';
 
 /* ======================================================

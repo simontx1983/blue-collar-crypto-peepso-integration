@@ -65,7 +65,7 @@ add_action('wp', function () {
         if ($existing && get_post($existing)) continue;
 
         // Create the shadow post via domain layer
-        BCC_Domain_Abstract::create_from_page_by_type($page_id, $cpt_name);
+        BCCPeepSoDomainAbstractPageType::create_from_page_by_type($page_id, $cpt_name);
     }
 
     // Mark integrity as confirmed so future page loads skip these checks
