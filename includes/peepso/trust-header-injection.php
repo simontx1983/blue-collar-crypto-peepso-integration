@@ -51,9 +51,16 @@ function bcc_render_trust_header_panel( int $page_id, string $mode ) {
    ────────────────────────────────────────────────────────────────────── */
 
 /**
- * Start capturing the page-header template output.
+ * Output buffer injection — DISABLED.
+ *
+ * The custom page-header.php is now installed as a PeepSo theme override
+ * at: themes/peepso-block-theme-child/peepso/pages/page-header.php
+ *
+ * This means PeepSo uses our custom template for ALL page views (Stream,
+ * Followers, Settings, Dashboard) — no more buffer interception needed.
+ * The trust header is injected directly in the template itself.
  */
-add_action( 'peepso_action_before_exec_template', 'bcc_trust_header_buffer_start', 10, 4 );
+// add_action( 'peepso_action_before_exec_template', 'bcc_trust_header_buffer_start', 10, 4 );
 
 function bcc_trust_header_buffer_start( $section, $template, $data, $return_output ) {
     if ( 'pages' !== $section || 'page-header' !== $template ) {
@@ -65,13 +72,25 @@ function bcc_trust_header_buffer_start( $section, $template, $data, $return_outp
         return;
     }
 
+    // Skip on the dashboard segment — our custom page-header partial
+    // (includes/partials/page-header.php) handles injection directly.
+    // Without this, both paths fire and produce two different headers.
+    if ( class_exists( 'PeepSoPagesShortcode' ) ) {
+        $sc = PeepSoPagesShortcode::get_instance();
+        if ( ! empty( $sc->page_segment_id ) && $sc->page_segment_id === 'dashboard' ) {
+            return;
+        }
+    }
+
     ob_start();
 }
 
 /**
+ * DISABLED — see comment above.
+ *
  * Capture the page-header output and inject trust header above the nav menu.
  */
-add_action( 'peepso_action_after_exec_template', 'bcc_trust_header_buffer_end', 10, 4 );
+// add_action( 'peepso_action_after_exec_template', 'bcc_trust_header_buffer_end', 10, 4 );
 
 function bcc_trust_header_buffer_end( $section, $template, $data, $return_output ) {
     if ( 'pages' !== $section || 'page-header' !== $template ) {

@@ -20,16 +20,10 @@ if (file_exists($plugin_header_file)) {
     include $plugin_header_file;
 }
 
-global $wpdb;
-
-$category_ids = $wpdb->get_col(
-    $wpdb->prepare(
-        "SELECT pm_cat_id 
-         FROM {$wpdb->prefix}peepso_page_categories 
-         WHERE pm_page_id = %d",
-        $page->id
-    )
-);
+// $category_ids is pre-fetched by segments.php before including this template.
+if (!isset($category_ids) || !is_array($category_ids)) {
+    $category_ids = [];
+}
 
 $category_map = function_exists('bcc_get_category_map') ? bcc_get_category_map() : [];
 

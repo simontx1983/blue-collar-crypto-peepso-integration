@@ -11,6 +11,12 @@ if (!defined('ABSPATH')) {
  */
 class GalleryRepository
 {
+    /** @var string Explicit column list for bcc_collections. */
+    private const COLL_COLUMNS = 'id, post_id, user_id, name, sort_order, image_count, created_at';
+
+    /** @var string Explicit column list for bcc_collection_images. */
+    private const IMG_COLUMNS = 'id, collection_id, file, url, thumbnail, size, sort_order, created_at';
+
     /* ======================================================
        TABLE HELPERS
     ====================================================== */
@@ -40,7 +46,7 @@ class GalleryRepository
         $table = self::collections_table();
         return $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT * FROM $table WHERE post_id=%d AND sort_order=%d LIMIT 1",
+                "SELECT " . self::COLL_COLUMNS . " FROM $table WHERE post_id=%d AND sort_order=%d LIMIT 1",
                 $post_id,
                 $sort_order
             )
@@ -54,7 +60,7 @@ class GalleryRepository
 
         $existing = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT * FROM $table WHERE post_id=%d AND sort_order=%d",
+                "SELECT " . self::COLL_COLUMNS . " FROM $table WHERE post_id=%d AND sort_order=%d",
                 $post_id,
                 $sort_order
             )
@@ -78,7 +84,7 @@ class GalleryRepository
 
         return $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT * FROM $table WHERE post_id=%d AND sort_order=%d",
+                "SELECT " . self::COLL_COLUMNS . " FROM $table WHERE post_id=%d AND sort_order=%d",
                 $post_id,
                 $sort_order
             )
@@ -173,7 +179,7 @@ class GalleryRepository
 
         $items = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM $table
+                "SELECT " . self::IMG_COLUMNS . " FROM $table
                  WHERE collection_id=%d
                  ORDER BY sort_order ASC, id ASC
                  LIMIT %d OFFSET %d",
@@ -254,7 +260,7 @@ class GalleryRepository
         $placeholders = implode(',', array_fill(0, count($image_ids), '%d'));
         $found = $wpdb->get_results(
             $wpdb->prepare(
-                "SELECT * FROM $table WHERE collection_id = %d AND id IN ($placeholders)",
+                "SELECT " . self::IMG_COLUMNS . " FROM $table WHERE collection_id = %d AND id IN ($placeholders)",
                 ...array_merge([$collection_id], $image_ids)
             )
         );
@@ -322,7 +328,7 @@ class GalleryRepository
         if ($collection_id > 0) {
             $image = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT * FROM $table WHERE id=%d AND collection_id=%d",
+                    "SELECT " . self::IMG_COLUMNS . " FROM $table WHERE id=%d AND collection_id=%d",
                     $image_id,
                     $collection_id
                 )
@@ -330,7 +336,7 @@ class GalleryRepository
         } else {
             $image = $wpdb->get_row(
                 $wpdb->prepare(
-                    "SELECT * FROM $table WHERE id=%d",
+                    "SELECT " . self::IMG_COLUMNS . " FROM $table WHERE id=%d",
                     $image_id
                 )
             );
