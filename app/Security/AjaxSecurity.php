@@ -26,8 +26,13 @@ class AjaxSecurity
             if (!bcc_user_can_edit_post($post_id)) {
                 wp_send_json_error(['message' => 'Permission denied']);
             }
-        } elseif (!current_user_can('edit_post', $post_id)) {
-            wp_send_json_error(['message' => 'Permission denied']);
+        } else {
+            // FAIL-CLOSED: When the ownership-aware permission function
+            // is unavailable (bcc-core deactivated), deny all edit
+            // operations. Using current_user_can('edit_post') would
+            // grant WP Editors access to any page's fields — a
+            // privilege escalation when the ownership check is absent.
+            wp_send_json_error(['message' => 'Permission system unavailable']);
         }
     }
 
@@ -37,8 +42,11 @@ class AjaxSecurity
             if (!bcc_user_can_view_post($post_id)) {
                 wp_send_json_error(['message' => 'Not allowed']);
             }
-        } elseif (!current_user_can('read_post', $post_id)) {
-            wp_send_json_error(['message' => 'Not allowed']);
+        } else {
+            // FAIL-CLOSED: Deny view access when bcc-core's visibility
+            // system is unavailable rather than falling back to WP
+            // capabilities that bypass PeepSo privacy settings.
+            wp_send_json_error(['message' => 'Permission system unavailable']);
         }
     }
 
