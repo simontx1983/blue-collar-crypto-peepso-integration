@@ -66,7 +66,7 @@ class GalleryController
     {
         AjaxSecurity::verify_nonce();
 
-        if (!Throttle::allow('gallery_upload', 5, 60)) {
+        if (!Throttle::allow('bcc_peepso.gallery_upload', 5, 60)) {
             wp_send_json_error(['message' => 'Too many requests.'], 429);
         }
 
@@ -80,6 +80,13 @@ class GalleryController
         self::canEditOrFail($post_id);
 
         $collection = self::getCollectionOrFail($post_id, $row);
+
+        // Enforce per-collection image count cap to prevent abuse.
+        $max_images = (int) apply_filters('bcc_gallery_max_images', 50);
+        $current_count = GalleryRepository::count_images((int) $collection->id);
+        if ($current_count >= $max_images) {
+            wp_send_json_error(['message' => 'Collection image limit reached (' . $max_images . ')']);
+        }
 
         $upload_dir = wp_upload_dir();
         $base_dir   = trailingslashit($upload_dir['basedir']) . 'bcc-gallery/';
@@ -97,8 +104,6 @@ class GalleryController
             'image/png',
             'image/gif',
             'image/webp',
-            'image/heic',
-            'image/heif'
         ];
 
         $uploaded = [];
@@ -199,7 +204,7 @@ class GalleryController
     {
         AjaxSecurity::verify_nonce();
 
-        if (!Throttle::allow('gallery_delete', 10, 60)) {
+        if (!Throttle::allow('bcc_peepso.gallery_delete', 10, 60)) {
             wp_send_json_error(['message' => 'Too many requests.'], 429);
         }
 
@@ -242,7 +247,7 @@ class GalleryController
     {
         AjaxSecurity::verify_nonce();
 
-        if (!Throttle::allow('gallery_list', 30, 60)) {
+        if (!Throttle::allow('bcc_peepso.gallery_list', 30, 60)) {
             wp_send_json_error(['message' => 'Too many requests.'], 429);
         }
 
@@ -257,7 +262,17 @@ class GalleryController
 
         self::canViewOrFail($post_id);
 
-        $collection = self::getCollectionOrFail($post_id, $row);
+        // Read-only: do NOT create a collection just to list images.
+        $collection = GalleryRepository::get_collection($post_id, $row);
+        if (!$collection) {
+            wp_send_json_success([
+                'items'    => [],
+                'total'    => 0,
+                'page'     => max(1, $page),
+                'per_page' => max(1, min(50, $per_page)),
+            ]);
+            return;
+        }
 
         $page = max(1, $page);
         $per_page = max(1, min(50, $per_page));
@@ -289,7 +304,7 @@ class GalleryController
     {
         AjaxSecurity::verify_nonce();
 
-        if (!Throttle::allow('gallery_reorder', 10, 60)) {
+        if (!Throttle::allow('bcc_peepso.gallery_reorder', 10, 60)) {
             wp_send_json_error(['message' => 'Too many requests.'], 429);
         }
 
@@ -324,7 +339,7 @@ class GalleryController
     {
         AjaxSecurity::verify_nonce();
 
-        if (!Throttle::allow('gallery_bulk_delete', 3, 60)) {
+        if (!Throttle::allow('bcc_peepso.gallery_bulk_delete', 3, 60)) {
             wp_send_json_error(['message' => 'Too many requests.'], 429);
         }
 
@@ -372,7 +387,7 @@ class GalleryController
     {
         AjaxSecurity::verify_nonce();
 
-        if (!Throttle::allow('repeater_delete', 10, 60)) {
+        if (!Throttle::allow('bcc_peepso.repeater_delete', 10, 60)) {
             wp_send_json_error(['message' => 'Too many requests.'], 429);
         }
 
@@ -387,7 +402,10 @@ class GalleryController
         self::canEditOrFail($post_id);
 
         $domain = AbstractPageType::get_domain_for_post($post_id);
-        if ($domain && !call_user_func([$domain, 'is_valid_field'], $field)) {
+        if (!$domain) {
+            wp_send_json_error(['message' => 'Unsupported post type']);
+        }
+        if (!call_user_func([$domain, 'is_valid_field'], $field)) {
             wp_send_json_error(['message' => 'Invalid field']);
         }
 
@@ -422,7 +440,7 @@ class GalleryController
     {
         AjaxSecurity::verify_nonce();
 
-        if (!Throttle::allow('repeater_reorder', 10, 60)) {
+        if (!Throttle::allow('bcc_peepso.repeater_reorder', 10, 60)) {
             wp_send_json_error(['message' => 'Too many requests.'], 429);
         }
 
@@ -439,7 +457,10 @@ class GalleryController
         self::canEditOrFail($post_id);
 
         $domain = AbstractPageType::get_domain_for_post($post_id);
-        if ($domain && !call_user_func([$domain, 'is_valid_field'], $field)) {
+        if (!$domain) {
+            wp_send_json_error(['message' => 'Unsupported post type']);
+        }
+        if (!call_user_func([$domain, 'is_valid_field'], $field)) {
             wp_send_json_error(['message' => 'Invalid field']);
         }
 

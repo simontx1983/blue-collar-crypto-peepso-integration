@@ -6,24 +6,28 @@ if (!defined('ABSPATH')) exit;
 ====================================================== */
 
 $page_id = isset( $page->id ) ? (int) $page->id : 0;
-$nft_id  = ( $page_id && function_exists( 'bcc_get_nft_id' ) ) ? bcc_get_nft_id( $page_id ) : 0;
+$nft_id  = $page_id ? \BCC\PeepSo\Domain\NftPageType::get_id_from_page( $page_id ) : 0;
 $has_nft = $nft_id > 0;
 
 $can_view = ( $has_nft && function_exists( 'bcc_user_can_view_post' ) ) ? bcc_user_can_view_post( $nft_id ) : false;
 $can_edit = ( $has_nft && function_exists( 'bcc_user_can_edit_post' ) ) ? bcc_user_can_edit_post( $nft_id ) : false;
 
-$networks = get_posts([
-    'post_type' => 'network',
-    'posts_per_page' => -1,
-    'orderby' => 'title',
-    'order' => 'ASC'
-]);
-
 $network_options = [];
-foreach ($networks as $n) {
-    $network_options[] = $n->ID . ':' . $n->post_title;
+$network_options_str = '';
+
+if ($can_edit) {
+    $networks = get_posts([
+        'post_type' => 'network',
+        'posts_per_page' => 100,
+        'orderby' => 'title',
+        'order' => 'ASC'
+    ]);
+
+    foreach ($networks as $n) {
+        $network_options[] = $n->ID . ':' . $n->post_title;
+    }
+    $network_options_str = implode(',', $network_options);
 }
-$network_options_str = implode(',', $network_options);
 ?>
 
 <div class="ps-nft-profile bcc-nft-profile">

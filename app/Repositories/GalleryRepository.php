@@ -17,18 +17,44 @@ class GalleryRepository
     /** @var string Explicit column list for bcc_collection_images. */
     private const IMG_COLUMNS = 'id, collection_id, file, url, thumbnail, size, sort_order, created_at';
 
+    private const CACHE_GROUP = 'bcc_gallery';
+    private const CACHE_TTL   = 60; // seconds
+
+    /**
+     * Invalidate all caches for a given collection (count + paged images).
+     * Uses a generation counter so we don't need to know every page/per_page combo.
+     */
+    private static function invalidateCollectionCaches(int $collection_id): void
+    {
+        wp_cache_delete("img_count_{$collection_id}", self::CACHE_GROUP);
+        wp_cache_incr("img_gen_{$collection_id}", 1, self::CACHE_GROUP)
+            || wp_cache_set("img_gen_{$collection_id}", 1, self::CACHE_GROUP, 0);
+    }
+
+    private static function imgCacheKey(int $collection_id, int $page, int $per_page): string
+    {
+        $gen = (int) wp_cache_get("img_gen_{$collection_id}", self::CACHE_GROUP);
+        return "imgs_{$collection_id}_{$page}_{$per_page}_g{$gen}";
+    }
+
     /* ======================================================
        TABLE HELPERS
     ====================================================== */
 
-    private static function collections_table()
+    private static function collections_table(): string
     {
+        if (class_exists('\\BCC\\Core\\DB\\DB')) {
+            return \BCC\Core\DB\DB::table('collections');
+        }
         global $wpdb;
         return $wpdb->prefix . 'bcc_collections';
     }
 
-    private static function images_table()
+    private static function images_table(): string
     {
+        if (class_exists('\\BCC\\Core\\DB\\DB')) {
+            return \BCC\Core\DB\DB::table('collection_images');
+        }
         global $wpdb;
         return $wpdb->prefix . 'bcc_collection_images';
     }
@@ -42,15 +68,24 @@ class GalleryRepository
      */
     public static function get_collection(int $post_id, int $sort_order): ?object
     {
+        $cache_key = "coll_{$post_id}_{$sort_order}";
+        $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
+        if ($cached !== false) {
+            return $cached ?: null;
+        }
+
         global $wpdb;
         $table = self::collections_table();
-        return $wpdb->get_row(
+        $result = $wpdb->get_row(
             $wpdb->prepare(
                 "SELECT " . self::COLL_COLUMNS . " FROM $table WHERE post_id=%d AND sort_order=%d LIMIT 1",
                 $post_id,
                 $sort_order
             )
         );
+
+        wp_cache_set($cache_key, $result ?: 0, self::CACHE_GROUP, self::CACHE_TTL);
+        return $result;
     }
 
     public static function get_or_create_collection(int $post_id, int $user_id, int $sort_order)
@@ -58,9 +93,10 @@ class GalleryRepository
         global $wpdb;
         $table = self::collections_table();
 
+        // Fast path: check without locking.
         $existing = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT " . self::COLL_COLUMNS . " FROM $table WHERE post_id=%d AND sort_order=%d",
+                "SELECT " . self::COLL_COLUMNS . " FROM $table WHERE post_id=%d AND sort_order=%d LIMIT 1",
                 $post_id,
                 $sort_order
             )
@@ -70,25 +106,41 @@ class GalleryRepository
             return $existing;
         }
 
+        // Resolve the page owner so the collection is always attributed
+        // to the post author, not whoever triggered the creation.
+        $post_obj = get_post($post_id);
+        $owner_id = $post_obj ? (int) $post_obj->post_author : $user_id;
+
+        // Slow path: serialize concurrent creators via INSERT IGNORE
+        // inside a transaction so the subsequent SELECT is guaranteed
+        // to return the winning row.
+        $wpdb->query('START TRANSACTION');
+
         $wpdb->query(
             $wpdb->prepare(
                 "INSERT IGNORE INTO $table (post_id, user_id, name, sort_order, image_count)
                  VALUES (%d, %d, %s, %d, %d)",
                 $post_id,
-                $user_id,
+                $owner_id,
                 'Collection ' . ($sort_order + 1),
                 $sort_order,
                 0
             )
         );
 
-        return $wpdb->get_row(
+        $row = $wpdb->get_row(
             $wpdb->prepare(
-                "SELECT " . self::COLL_COLUMNS . " FROM $table WHERE post_id=%d AND sort_order=%d",
+                "SELECT " . self::COLL_COLUMNS . " FROM $table WHERE post_id=%d AND sort_order=%d LIMIT 1",
                 $post_id,
                 $sort_order
             )
         );
+
+        $wpdb->query('COMMIT');
+
+        wp_cache_delete("coll_{$post_id}_{$sort_order}", self::CACHE_GROUP);
+
+        return $row;
     }
 
     /* ======================================================
@@ -97,15 +149,24 @@ class GalleryRepository
 
     public static function count_images(int $collection_id): int
     {
+        $cache_key = "img_count_{$collection_id}";
+        $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
+        if ($cached !== false) {
+            return (int) $cached;
+        }
+
         global $wpdb;
         $table = self::images_table();
 
-        return (int) $wpdb->get_var(
+        $count = (int) $wpdb->get_var(
             $wpdb->prepare(
                 "SELECT COUNT(*) FROM $table WHERE collection_id=%d",
                 $collection_id
             )
         );
+
+        wp_cache_set($cache_key, $count, self::CACHE_GROUP, self::CACHE_TTL);
+        return $count;
     }
 
     public static function insert_image(int $collection_id, array $data): int
@@ -113,14 +174,16 @@ class GalleryRepository
         global $wpdb;
         $table = self::images_table();
 
+        $wpdb->query('START TRANSACTION');
+
+        // Lock the collection's image rows so concurrent inserts serialize.
+        // FOR UPDATE ensures two concurrent requests cannot read the same MAX.
         $next_order = (int) $wpdb->get_var(
             $wpdb->prepare(
-                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM $table WHERE collection_id = %d",
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM $table WHERE collection_id = %d FOR UPDATE",
                 $collection_id
             )
         );
-
-        $wpdb->query('START TRANSACTION');
 
         $inserted = $wpdb->insert(
             $table,
@@ -165,17 +228,26 @@ class GalleryRepository
         }
 
         $wpdb->query('COMMIT');
+
+        self::invalidateCollectionCaches($collection_id);
+
         return $image_id;
     }
 
     public static function get_images_paged(int $collection_id, int $page = 1, int $per_page = 12): array
     {
-        global $wpdb;
-        $table = self::images_table();
-
         $page = max(1, $page);
         $per_page = max(1, min(50, $per_page));
         $offset = ($page - 1) * $per_page;
+
+        $cache_key = self::imgCacheKey($collection_id, $page, $per_page);
+        $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
+        if ($cached !== false) {
+            return $cached;
+        }
+
+        global $wpdb;
+        $table = self::images_table();
 
         $items = $wpdb->get_results(
             $wpdb->prepare(
@@ -196,10 +268,13 @@ class GalleryRepository
             )
         );
 
-        return [
+        $result = [
             'items' => is_array($items) ? $items : [],
             'total' => $total
         ];
+
+        wp_cache_set($cache_key, $result, self::CACHE_GROUP, self::CACHE_TTL);
+        return $result;
     }
 
     public static function update_sort_orders(int $collection_id, array $ordered_ids): bool
@@ -243,6 +318,8 @@ class GalleryRepository
                 ...array_merge($case_args, [$collection_id], $ordered_ids)
             )
         );
+
+        self::invalidateCollectionCaches($collection_id);
 
         return true;
     }
@@ -315,6 +392,8 @@ class GalleryRepository
             }
 
             $wpdb->query('COMMIT');
+
+            self::invalidateCollectionCaches($collection_id);
         }
 
         return ['deleted' => $deleted, 'failed' => $failed];
@@ -368,6 +447,43 @@ class GalleryRepository
         }
 
         $wpdb->query('COMMIT');
+
+        self::invalidateCollectionCaches($image->collection_id);
+
         return $image;
+    }
+
+    /**
+     * Delete all collections and their images for a given post.
+     * Used during shadow CPT trash/delete to prevent orphaned rows.
+     */
+    public static function deleteByPostId(int $post_id): void
+    {
+        global $wpdb;
+
+        $coll_table = self::collections_table();
+        $img_table  = self::images_table();
+
+        $collection_ids = $wpdb->get_col(
+            $wpdb->prepare("SELECT id FROM {$coll_table} WHERE post_id = %d", $post_id)
+        );
+
+        if (empty($collection_ids)) return;
+
+        $placeholders = implode(',', array_fill(0, count($collection_ids), '%d'));
+
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$img_table} WHERE collection_id IN ({$placeholders})",
+            ...$collection_ids
+        ));
+
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$coll_table} WHERE id IN ({$placeholders})",
+            ...$collection_ids
+        ));
+
+        foreach ($collection_ids as $cid) {
+            self::invalidateCollectionCaches((int) $cid);
+        }
     }
 }

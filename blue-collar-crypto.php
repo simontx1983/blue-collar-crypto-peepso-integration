@@ -2,10 +2,10 @@
 /**
  * Plugin Name: Blue Collar Crypto – PeepSo Integration
  * Description: Core integration layer between Blue Collar Crypto and the PeepSo social platform.
- * Version: 1.1.0
+ * Version: 1.0.0
  * Author: Blue Collar Labs LLC
  * License: GPL v2 or later
- * Requires Plugins: peepso
+ * Requires Plugins: peepso, bcc-core
  */
 
 if (!defined('ABSPATH')) exit;
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) exit;
  * Constants
  * ==========================================================
  */
-define('BCC_VERSION', '1.1.0');
+define('BCC_VERSION', '1.0.0');
 define('BCC_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('BCC_INCLUDES_PATH', BCC_PLUGIN_PATH . 'includes/');
 define('BCC_TEMPLATES_PATH', BCC_PLUGIN_PATH . 'templates/');
@@ -39,27 +39,11 @@ register_activation_hook(__FILE__, function () {
 
 /**
  * ==========================================================
- * Bootstrap
+ * Initialize Plugin (deferred to plugins_loaded)
  * ==========================================================
- */
-$bootstrap = BCC_INCLUDES_PATH . 'core/bootstrap.php';
-
-if (file_exists($bootstrap)) {
-    require_once $bootstrap;
-} else {
-    // fallback: do not fatal the site if file missing
-    add_action('admin_notices', function () use ($bootstrap) {
-        echo '<div class="notice notice-error"><p>';
-        echo esc_html('BCC Bootstrap missing: ' . $bootstrap);
-        echo '</p></div>';
-    });
-    return;
-}
-
-/**
- * ==========================================================
- * Initialize Plugin
- * ==========================================================
+ * Bootstrap is loaded INSIDE the dependency guard so that
+ * controller classes (which import bcc-core classes via `use`)
+ * are never parsed when bcc-core is inactive.
  */
 add_action('plugins_loaded', 'bcc_init', 20);
 
@@ -73,6 +57,31 @@ function bcc_init() {
             echo '</p></div>';
         });
 
+        return;
+    }
+
+    if (!defined('BCC_CORE_VERSION')) {
+
+        add_action('admin_notices', function () {
+            echo '<div class="notice notice-error"><p>';
+            echo esc_html__('Blue Collar Crypto – PeepSo Integration requires BCC Core to be installed and activated.', 'blue-collar-crypto');
+            echo '</p></div>';
+        });
+
+        return;
+    }
+
+    // Dependencies confirmed — load bootstrap (registers controllers, hooks, renderers).
+    $bootstrap = BCC_INCLUDES_PATH . 'core/bootstrap.php';
+
+    if (file_exists($bootstrap)) {
+        require_once $bootstrap;
+    } else {
+        add_action('admin_notices', function () use ($bootstrap) {
+            echo '<div class="notice notice-error"><p>';
+            echo esc_html('BCC Bootstrap missing: ' . $bootstrap);
+            echo '</p></div>';
+        });
         return;
     }
 

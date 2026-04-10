@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) exit;
 ====================================================== */
 
 $page_id    = isset( $page->id ) ? (int) $page->id : 0;
-$builder_id = ( $page_id && function_exists( 'bcc_get_builder_id' ) ) ? bcc_get_builder_id( $page_id ) : 0;
+$builder_id = $page_id ? \BCC\PeepSo\Domain\BuilderPageType::get_id_from_page( $page_id ) : 0;
 $has_builder = $builder_id > 0;
 
 $can_view = ( $has_builder && function_exists( 'bcc_user_can_view_post' ) ) ? bcc_user_can_view_post( $builder_id ) : false;

@@ -29,12 +29,14 @@ class InlineEditController
     {
         check_ajax_referer('bcc_nonce', 'nonce');
 
-        if (!Throttle::allow('inline_edit', 30, 60)) {
-            wp_send_json_error(['message' => 'Too many requests.'], 429);
-        }
-
+        // Check ACF availability before consuming a rate-limit token,
+        // so a missing ACF doesn't burn the user's quota.
         if (!function_exists('update_field')) {
             wp_send_json_error('ACF not active');
+        }
+
+        if (!Throttle::allow('bcc_peepso.inline_edit', 30, 60)) {
+            wp_send_json_error(['message' => 'Too many requests.'], 429);
         }
 
         $post_id  = absint($_POST['post_id'] ?? 0);

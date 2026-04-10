@@ -65,7 +65,7 @@ class GalleryRenderer
 
         echo '<input type="file"
                     class="bcc-gallery-file-input"
-                    accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml,image/heic,image/heif"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
                     multiple
                     style="display: none;">';
 

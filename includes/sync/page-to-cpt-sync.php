@@ -38,49 +38,6 @@ add_action('save_post_peepso-page', function ($post_id, $post, $update) {
 
 
 
-/* ----------------------------------------------------
-   Find PeepSo Page ↔ Category Relation Table
----------------------------------------------------- */
-
-function bcc_find_peepso_relation_table() {
-
-    global $wpdb;
-
-    $table = $wpdb->prefix . 'peepso_page_categories';
-
-    if (!$wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table))) {
-        return [null, null, null];
-    }
-
-    $cols = $wpdb->get_results("DESCRIBE {$table}");
-
-    $page_col = null;
-    $cat_col  = null;
-
-    foreach ($cols as $c) {
-
-        if (!$page_col && stripos($c->Field, 'page') !== false) {
-            $page_col = $c->Field;
-        }
-
-        if (!$cat_col && stripos($c->Field, 'cat') !== false) {
-            $cat_col = $c->Field;
-        }
-    }
-
-    // Validate column names contain only safe characters
-    if ($page_col && !preg_match('/^[a-zA-Z_]+$/', $page_col)) {
-        $page_col = null;
-    }
-    if ($cat_col && !preg_match('/^[a-zA-Z_]+$/', $cat_col)) {
-        $cat_col = null;
-    }
-
-    return [$table, $page_col, $cat_col];
-}
-
-
-
 
 /* ----------------------------------------------------
    Sync Engine (Runs After Request)
@@ -91,24 +48,13 @@ add_action('shutdown', function () {
     if (empty($GLOBALS['bcc_pending_peepso_pages'])) return;
     if (!function_exists('bcc_get_category_map')) return;
 
-    global $wpdb;
-
-    [$table, $page_col, $cat_col] = bcc_find_peepso_relation_table();
-
-    if (!$table || !$page_col || !$cat_col) return;
+    if (!\BCC\PeepSo\Repositories\PeepSoPageRepository::tableExists()) return;
 
     $map = bcc_get_category_map();
 
     foreach ($GLOBALS['bcc_pending_peepso_pages'] as $page_id => $data) {
 
-        $rows = $wpdb->get_results(
-            $wpdb->prepare(
-                "SELECT {$cat_col} AS cat_id
-                 FROM {$table}
-                 WHERE {$page_col} = %d",
-                $page_id
-            )
-        );
+        $rows = \BCC\PeepSo\Repositories\PeepSoPageRepository::getCategoryRowsForPage((int) $page_id);
 
         if (empty($rows)) continue;
 
@@ -151,7 +97,7 @@ add_action('shutdown', function () {
             }
 
             // Create shadow CPT via domain layer
-            $cpt_id = BCCPeepSoDomainAbstractPageType::create_from_page_by_type($page_id, $post_type);
+            $cpt_id = \BCC\PeepSo\Domain\AbstractPageType::create_from_page_by_type($page_id, $post_type);
 
             if (!$cpt_id) continue;
 
@@ -184,11 +130,27 @@ add_action('before_delete_post', function ($post_id) {
 
     foreach ($linked as $cpt_id) {
 
-        if ($cpt_id && get_post($cpt_id)) {
-            wp_trash_post($cpt_id);
+        if (!$cpt_id || !get_post($cpt_id)) continue;
+
+        // Clean up gallery collections and images for this shadow CPT
+        // before trashing it, so we don't leave orphaned rows.
+        if (class_exists('\\BCC\\PeepSo\\Repositories\\GalleryRepository')) {
+            bcc_cleanup_gallery_for_post((int) $cpt_id);
         }
+
+        wp_trash_post($cpt_id);
     }
 
     delete_post_meta($post_id, '_linked_cpts');
 
 }, 10);
+
+/**
+ * Remove gallery collections and their images for a given post.
+ * Prevents orphaned rows when shadow CPTs are trashed/deleted.
+ */
+if (!function_exists('bcc_cleanup_gallery_for_post')) {
+    function bcc_cleanup_gallery_for_post(int $post_id): void {
+        \BCC\PeepSo\Repositories\GalleryRepository::deleteByPostId($post_id);
+    }
+}

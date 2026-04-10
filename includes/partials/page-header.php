@@ -15,8 +15,6 @@ if (FALSE === $PeepSoPageUser->can('manage_page') || (FALSE === $has_cover)) {
 	$cover_class = 'has-cover';
 }
 
-$description = str_replace("\n", "<br/>", $page->description);
-
 $page_categories = PeepSoPageCategoriesPages::get_categories_for_page($page->id);
 $page_categories_html = array();
 
@@ -54,7 +52,7 @@ if (!isset($page_segment)) {
 			<div class="ps-focus__avatar-change-wrapper ps-js-avatar-button-wrapper" <?php echo $avatar_box_attrs ?>>
 				<?php if ($PeepSoPageUser->can('manage_page')) { ?>
 					<a href="#" class="ps-focus__avatar-change ps-js-avatar-button">
-						<i class="gcis gci-camera"></i><span><?php echo __('Change avatar', 'pageso'); ?></span>
+						<i class="gcis gci-camera"></i><span><?php echo esc_html__('Change avatar', 'pageso'); ?></span>
 					</a>
 				<?php } ?>
 			</div>
@@ -78,35 +76,35 @@ if (!isset($page_segment)) {
 		<?php if ($PeepSoPageUser->can('manage_page')) { ?>
 
 			<div class="ps-focus__options ps-js-dropdown ps-js-cover-dropdown">
-				<a href="#" class="ps-focus__options-toggle ps-js-dropdown-toggle"><span><?php echo __('Change cover image', 'pageso'); ?></span><i class="gcis gci-image"></i></a>
+				<a href="#" class="ps-focus__options-toggle ps-js-dropdown-toggle"><span><?php echo esc_html__('Change cover image', 'pageso'); ?></span><i class="gcis gci-image"></i></a>
 				<div class="ps-focus__options-menu ps-js-dropdown-menu">
 					<a href="#" class="ps-js-cover-upload">
 						<i class="gcis gci-paint-brush"></i>
-						<?php echo __('Upload', 'pageso'); ?>
+						<?php echo esc_html__('Upload', 'pageso'); ?>
 					</a>
 					<a href="#" class="ps-js-cover-reposition">
 						<i class="gcis gci-arrows-alt"></i>
-						<?php echo __('Reposition', 'pageso'); ?>
+						<?php echo esc_html__('Reposition', 'pageso'); ?>
 					</a>
 					<a href="#" class="ps-js-cover-rotate-left">
 						<i class="gcis gci-arrow-rotate-left"></i>
-						<?php echo __('Rotate left', 'pageso'); ?>
+						<?php echo esc_html__('Rotate left', 'pageso'); ?>
 					</a>
 					<a href="#" class="ps-js-cover-rotate-right">
 						<i class="gcis gci-arrow-rotate-right"></i>
-						<?php echo __('Rotate right', 'pageso'); ?>
+						<?php echo esc_html__('Rotate right', 'pageso'); ?>
 					</a>
 					<a href="#" class="ps-js-cover-remove">
 						<i class="gcis gci-trash"></i>
-						<?php echo __('Delete', 'pageso'); ?>
+						<?php echo esc_html__('Delete', 'pageso'); ?>
 					</a>
 				</div>
 			</div>
 
 			<div class="ps-focus__reposition ps-js-cover-reposition-actions" style="display:none">
 				<div class="ps-focus__reposition-actions reposition-cover-actions">
-					<a href="#" class="ps-focus__reposition-action ps-js-cover-reposition-cancel"><?php echo __('Cancel', 'pageso'); ?></a>
-					<a href="#" class="ps-focus__reposition-action ps-js-cover-reposition-confirm"><i class="fas fa-check"></i> <?php echo __('Save', 'pageso'); ?></a>
+					<a href="#" class="ps-focus__reposition-action ps-js-cover-reposition-cancel"><?php echo esc_html__('Cancel', 'pageso'); ?></a>
+					<a href="#" class="ps-focus__reposition-action ps-js-cover-reposition-confirm"><i class="fas fa-check"></i> <?php echo esc_html__('Save', 'pageso'); ?></a>
 				</div>
 			</div>
 
@@ -119,7 +117,7 @@ if (!isset($page_segment)) {
 				<div class="ps-focus__name">
 					<?php echo esc_html($page->name); ?>
 				</div>
-				<div class="ps-focus__desc-toggle ps-tip ps-tip--absolute ps-tip--inline ps-tip--bottom ps-js-focus-box-toggle" aria-label="<?php echo __('Show details', 'pageso'); ?>">
+				<div class="ps-focus__desc-toggle ps-tip ps-tip--absolute ps-tip--inline ps-tip--bottom ps-js-focus-box-toggle" aria-label="<?php echo esc_attr__('Show details', 'pageso'); ?>">
 					<i class="gcis gci-info-circle"></i>
 				</div>
 			</div>
@@ -130,7 +128,7 @@ if (!isset($page_segment)) {
 				<!-- Description -->
 				<?php
 
-				$description = stripslashes($description);
+				$description = stripslashes($page->description);
 				if (PeepSo::get_option_new('md_pages_about', 0)) {
 					$description = PeepSo::do_parsedown($description);
 				}
@@ -142,7 +140,7 @@ if (!isset($page_segment)) {
 				<!-- Categories -->
 				<?php if (PeepSo::get_option('pages_categories_enabled', FALSE)) { ?>
 					<div class="ps-focus__desc-details">
-						<?php if (count($page_categories) > 1) { ?><i class="gcis gci-tags"></i> <?php echo __('Page categories', 'pageso'); ?>:<?php } else { ?><i class="gcis gci-tag"></i> <?php echo __('Page category', 'pageso'); ?>:<?php } ?>
+						<?php if (count($page_categories) > 1) { ?><i class="gcis gci-tags"></i> <?php echo esc_html__('Page categories', 'pageso'); ?>:<?php } else { ?><i class="gcis gci-tag"></i> <?php echo esc_html__('Page category', 'pageso'); ?>:<?php } ?>
 							<?php
 
 							foreach ($page_categories as $PeepSoPageCategory) {
@@ -249,7 +247,7 @@ if (!isset($page_segment)) {
 				}
 
 				?>
-				<a href="#" class="ps-focus__menu-item ps-focus__menu-item--more ps-tip ps-tip--arrow ps-js-item-more" aria-label="<?php echo __('More', 'pageso'); ?>" style="display:none">
+				<a href="#" class="ps-focus__menu-item ps-focus__menu-item--more ps-tip ps-tip--arrow ps-js-item-more" aria-label="<?php echo esc_attr__('More', 'pageso'); ?>" style="display:none">
 					<i class="gcis gci-ellipsis-h"></i>
 				</a>
 				<div class="ps-focus__menu-more ps-dropdown ps-dropdown--menu ps-js-focus-more">

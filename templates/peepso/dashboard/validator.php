@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) exit;
 ====================================================== */
 
 $page_id       = isset( $page->id ) ? (int) $page->id : 0;
-$validator_id  = ( $page_id && function_exists( 'bcc_get_validator_id' ) ) ? bcc_get_validator_id( $page_id ) : 0;
+$validator_id  = $page_id ? \BCC\PeepSo\Domain\ValidatorPageType::get_id_from_page( $page_id ) : 0;
 $has_validator = $validator_id > 0;
 
 $can_view = ( $has_validator && function_exists( 'bcc_user_can_view_post' ) ) ? bcc_user_can_view_post( $validator_id ) : false;

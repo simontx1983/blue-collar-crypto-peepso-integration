@@ -27,7 +27,7 @@ class VisibilityController
             ]);
         }
 
-        if (!Throttle::allow('visibility', 20, 60)) {
+        if (!Throttle::allow('bcc_peepso.visibility', 20, 60)) {
             wp_send_json_error(['message' => 'Too many requests.'], 429);
         }
 
@@ -52,11 +52,11 @@ class VisibilityController
         AjaxSecurity::require_edit_permission($post_id);
 
         // Validate field against domain allowlist (mirrors InlineEditController pattern).
-        if (class_exists('\\BCC\\PeepSo\\Domain\\AbstractPageType')) {
-            $domain = \BCC\PeepSo\Domain\AbstractPageType::get_domain_for_post($post_id);
-            if ($domain && !call_user_func([$domain, 'is_valid_field'], $field)) {
-                wp_send_json_error(['message' => 'Invalid field']);
-            }
+        // No class_exists guard — if AbstractPageType is unavailable, reject the request
+        // rather than silently accepting arbitrary field names.
+        $domain = \BCC\PeepSo\Domain\AbstractPageType::get_domain_for_post($post_id);
+        if (!$domain || !call_user_func([$domain, 'is_valid_field'], $field)) {
+            wp_send_json_error(['message' => 'Invalid field']);
         }
 
         if (!function_exists('bcc_set_field_visibility')) {

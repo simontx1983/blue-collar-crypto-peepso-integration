@@ -43,6 +43,4 @@ function bcc_create_tables(): void {
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
     dbDelta($sql_collections);
     dbDelta($sql_images);
-
-    update_option('bcc_db_version', BCC_VERSION);
 }

@@ -108,11 +108,7 @@ abstract class AbstractPageType
        DOMAIN CLASS RESOLVER
     ====================================================== */
 
-    /**
-     * Domain map uses LEGACY class names because:
-     * 1. Bridge classes extend these namespaced classes
-     * 2. The map values are used with class_exists() and dynamic static calls
-     */
+    /** @var array<string, class-string<AbstractPageType>> Maps post type slug to domain class. */
     private static array $domain_map = [
         'validators' => \BCC\PeepSo\Domain\ValidatorPageType::class,
         'nft'        => \BCC\PeepSo\Domain\NftPageType::class,

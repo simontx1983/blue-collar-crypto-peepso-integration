@@ -122,8 +122,8 @@ class FieldRenderer
 
     private function checkEditPermission(): bool
     {
-        if (function_exists('bcc_user_can_edit_field')) {
-            return bcc_user_can_edit_field($this->post_id, $this->field);
+        if (function_exists('bcc_user_can_edit_post')) {
+            return bcc_user_can_edit_post($this->post_id);
         }
 
         return $this->can_edit;

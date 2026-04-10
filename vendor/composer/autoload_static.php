@@ -34,6 +34,7 @@ class ComposerStaticInit919a6277838ba16141192ac1ae0f7f55
         'BCC\\PeepSo\\Renderers\\GalleryRenderer' => __DIR__ . '/../..' . '/app/Renderers/GalleryRenderer.php',
         'BCC\\PeepSo\\Renderers\\RepeaterRenderer' => __DIR__ . '/../..' . '/app/Renderers/RepeaterRenderer.php',
         'BCC\\PeepSo\\Repositories\\GalleryRepository' => __DIR__ . '/../..' . '/app/Repositories/GalleryRepository.php',
+        'BCC\\PeepSo\\Repositories\\PeepSoPageRepository' => __DIR__ . '/../..' . '/app/Repositories/PeepSoPageRepository.php',
         'BCC\\PeepSo\\Security\\AjaxSecurity' => __DIR__ . '/../..' . '/app/Security/AjaxSecurity.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
     );

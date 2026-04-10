@@ -8,10 +8,17 @@ if (!defined('ABSPATH')) exit;
  */
 
 /**
- * Auto-create missing shadow CPT on page load
+ * Auto-create missing shadow CPT on page load.
+ *
+ * Gated on authentication to prevent unauthenticated visitors from
+ * triggering wp_insert_post. Uses a transient lock to prevent
+ * concurrent requests from creating duplicate CPTs.
+ * Only marks integrity as OK when ALL shadow CPTs were created
+ * (or already existed).
  */
 add_action('wp', function () {
     if (!is_singular('peepso-page')) return;
+    if (!is_user_logged_in()) return;
 
     global $post;
     if (!$post) return;
@@ -23,30 +30,40 @@ add_action('wp', function () {
         return;
     }
 
+    // Atomic lock: wp_cache_add returns false if the key already exists,
+    // preventing the TOCTOU race that get_transient/set_transient has.
+    // Falls back to a DB-level option lock when no persistent object cache is configured.
+    $lock_key = 'bcc_integrity_lock_' . $page_id;
+    $lock_acquired = wp_using_ext_object_cache()
+        ? wp_cache_add($lock_key, 1, 'bcc_locks', 30)
+        : add_option('_lock_' . $lock_key, 1, '', 'no');
+
+    if (!$lock_acquired) {
+        return;
+    }
+
+    // Helper to release the lock on any exit path.
+    $release_lock = function () use ($lock_key) {
+        if (wp_using_ext_object_cache()) {
+            wp_cache_delete($lock_key, 'bcc_locks');
+        } else {
+            delete_option('_lock_' . $lock_key);
+        }
+    };
+
     // Look up which CPTs this page needs based on its PeepSo category
-    if (!function_exists('bcc_find_peepso_relation_table') || !function_exists('bcc_get_category_map')) {
+    if (!function_exists('bcc_get_category_map')) {
+        $release_lock();
         return;
     }
 
-    list($rel_table, $rel_page_col, $rel_cat_col) = bcc_find_peepso_relation_table();
-    if (!$rel_table || !$rel_page_col || !$rel_cat_col) return;
-
-    // Validate identifiers contain only safe characters
-    if (!preg_match('/^[a-zA-Z0-9_]+$/', $rel_table) ||
-        !preg_match('/^[a-zA-Z0-9_]+$/', $rel_page_col) ||
-        !preg_match('/^[a-zA-Z0-9_]+$/', $rel_cat_col)) {
+    $cat_ids = \BCC\PeepSo\Repositories\PeepSoPageRepository::getCategoryIdsForPage($page_id);
+    if (empty($cat_ids)) {
+        // No categories — mark OK and release lock.
+        update_post_meta($page_id, '_bcc_integrity_ok', 1);
+        $release_lock();
         return;
     }
-
-    global $wpdb;
-    $cat_ids = $wpdb->get_col(
-        $wpdb->prepare(
-            "SELECT {$rel_cat_col} FROM {$rel_table} WHERE {$rel_page_col} = %d",
-            $page_id
-        )
-    );
-
-    if (empty($cat_ids)) return;
 
     $map = bcc_get_category_map();
 
@@ -59,17 +76,25 @@ add_action('wp', function () {
     }
     $target_cpts = array_unique($target_cpts);
 
+    $all_ok = true;
     foreach ($target_cpts as $cpt_name) {
         $existing = get_post_meta($page_id, '_linked_' . $cpt_name . '_id', true);
 
         if ($existing && get_post($existing)) continue;
 
         // Create the shadow post via domain layer
-        BCCPeepSoDomainAbstractPageType::create_from_page_by_type($page_id, $cpt_name);
+        $created_id = \BCC\PeepSo\Domain\AbstractPageType::create_from_page_by_type($page_id, $cpt_name);
+        if (!$created_id) {
+            $all_ok = false;
+        }
     }
 
-    // Mark integrity as confirmed so future page loads skip these checks
-    update_post_meta($page_id, '_bcc_integrity_ok', 1);
+    // Only mark integrity as confirmed if ALL shadow CPTs were created successfully.
+    if ($all_ok) {
+        update_post_meta($page_id, '_bcc_integrity_ok', 1);
+    }
+
+    $release_lock();
 });
 
 /**

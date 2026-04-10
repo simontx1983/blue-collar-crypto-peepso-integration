@@ -35,10 +35,7 @@ $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key LIKE '\_linked\_%'");
 $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_peepso_page_id'");
 $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_peepso_cat_id'");
 
-// 4. Remove plugin options
-delete_option('bcc_db_version');
-
-// 5. Delete uploaded gallery files (including subdirectories)
+// 4. Delete uploaded gallery files (including subdirectories)
 $upload_dir  = wp_upload_dir();
 $gallery_dir = trailingslashit($upload_dir['basedir']) . 'bcc-gallery/';
 

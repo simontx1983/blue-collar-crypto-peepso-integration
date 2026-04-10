@@ -66,32 +66,6 @@ function bcc_user_can_view_field($post_id, $field) {
 }
 
 /* ======================================================
-   CAN CURRENT USER EDIT FIELD
-====================================================== */
-
-if (!function_exists('bcc_user_can_edit_field')) {
-
-function bcc_user_can_edit_field($post_id, $field) {
-
-    // First check if user can edit the post at all
-    if (!bcc_user_can_edit_post($post_id)) {
-        return false;
-    }
-
-    // Then check field-specific visibility for edit permissions
-    $visibility = bcc_get_field_visibility($post_id, $field);
-
-    // If field is private, only owner can edit (already checked via bcc_user_can_edit_post)
-    // If field is members/public, owner can edit (already checked)
-    // So we don't need additional checks here, but we're keeping the function
-    // for future expansion (e.g., role-based edit permissions)
-
-    return true;
-}
-
-}
-
-/* ======================================================
    SET FIELD VISIBILITY (with validation)
 ====================================================== */
 
@@ -123,8 +97,18 @@ function bcc_set_field_visibility($post_id, $field, $visibility) {
         return false;
     }
 
-    $result = update_post_meta($post_id, '_bcc_vis_' . $field, $visibility);
-    
+    $meta_key = '_bcc_vis_' . $field;
+
+    // update_post_meta returns false both on failure AND when the new
+    // value matches the existing value (no-op). Check for no-op first
+    // so we don't report a false failure.
+    $current = get_post_meta($post_id, $meta_key, true);
+    if ($current === $visibility) {
+        return true; // Already set — no-op is a success.
+    }
+
+    $result = update_post_meta($post_id, $meta_key, $visibility);
+
     // Clear cache if we're using caching
     if (function_exists('bcc_clear_visibility_cache')) {
         bcc_clear_visibility_cache($post_id, $field);

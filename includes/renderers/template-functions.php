@@ -2,7 +2,7 @@
 if (!defined('ABSPATH')) exit;
 
 /**
- * Legacy template functions for backward compatibility
+ * Template rendering helper functions.
  */
 
 if (!function_exists('bcc_render_divider')) {

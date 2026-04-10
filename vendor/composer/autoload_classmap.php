@@ -19,6 +19,7 @@ return array(
     'BCC\\PeepSo\\Renderers\\GalleryRenderer' => $baseDir . '/app/Renderers/GalleryRenderer.php',
     'BCC\\PeepSo\\Renderers\\RepeaterRenderer' => $baseDir . '/app/Renderers/RepeaterRenderer.php',
     'BCC\\PeepSo\\Repositories\\GalleryRepository' => $baseDir . '/app/Repositories/GalleryRepository.php',
+    'BCC\\PeepSo\\Repositories\\PeepSoPageRepository' => $baseDir . '/app/Repositories/PeepSoPageRepository.php',
     'BCC\\PeepSo\\Security\\AjaxSecurity' => $baseDir . '/app/Security/AjaxSecurity.php',
     'Composer\\InstalledVersions' => $vendorDir . '/composer/InstalledVersions.php',
 );

@@ -33,15 +33,7 @@ add_action('peepso_page_segment_dashboard', function ($args, $url) {
     $page = $args['page'];
 
     // Pre-fetch category IDs for this page so the template has no DB queries.
-    global $wpdb;
-    $category_ids = $wpdb->get_col(
-        $wpdb->prepare(
-            "SELECT pm_cat_id
-             FROM {$wpdb->prefix}peepso_page_categories
-             WHERE pm_page_id = %d",
-            $page->id
-        )
-    );
+    $category_ids = \BCC\PeepSo\Repositories\PeepSoPageRepository::getCategoryIdsForPage((int) $page->id);
 
     $template = BCC_TEMPLATES_PATH . 'peepso/dashboard.php';
 

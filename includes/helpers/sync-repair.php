@@ -14,44 +14,16 @@ function bcc_repair_engine($page_id = null) {
         return ['error' => 'Permission denied'];
     }
 
-    global $wpdb;
-
     if (!function_exists('bcc_get_category_map')) {
         return ['error' => 'bcc_get_category_map() missing'];
     }
 
-    $map = bcc_get_category_map();
-    $log = [];
-
-    /* ----------------------------
-       Verify relation table exists
-    ---------------------------- */
-
-    if (function_exists('bcc_find_peepso_relation_table')) {
-        [$rel_table, $rel_page_col, $rel_cat_col] = bcc_find_peepso_relation_table();
-    } else {
-        $rel_table = $wpdb->prefix . 'peepso_page_categories';
-        if (!$wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $rel_table))) {
-            $rel_table = null;
-        }
-        $rel_page_col = 'pm_page_id';
-        $rel_cat_col  = 'pm_cat_id';
-    }
-
-    // Validate table and column names contain only safe characters
-    if ($rel_table && !preg_match('/^[a-zA-Z0-9_]+$/', $rel_table)) {
-        $rel_table = null;
-    }
-    if ($rel_page_col && !preg_match('/^[a-zA-Z0-9_]+$/', $rel_page_col)) {
-        $rel_page_col = null;
-    }
-    if ($rel_cat_col && !preg_match('/^[a-zA-Z0-9_]+$/', $rel_cat_col)) {
-        $rel_cat_col = null;
-    }
-
-    if (!$rel_table) {
+    if (!\BCC\PeepSo\Repositories\PeepSoPageRepository::tableExists()) {
         return ['error' => 'PeepSo Pages relation table not found. Is the PeepSo Pages plugin active?'];
     }
+
+    $map = bcc_get_category_map();
+    $log = [];
 
     /* ----------------------------
        Fetch pages
@@ -71,7 +43,7 @@ function bcc_repair_engine($page_id = null) {
 
         $pages = get_posts([
             'post_type'      => 'peepso-page',
-            'posts_per_page' => -1,
+            'posts_per_page' => 500,
             'post_status'    => 'publish',
             'no_found_rows'  => true,
         ]);
@@ -81,14 +53,7 @@ function bcc_repair_engine($page_id = null) {
 
         $log[] = "🔍 Page {$page->ID}: {$page->post_title}";
 
-        $cat_ids = $wpdb->get_col(
-            $wpdb->prepare(
-                "SELECT {$rel_cat_col}
-                 FROM {$rel_table}
-                 WHERE {$rel_page_col} = %d",
-                $page->ID
-            )
-        );
+        $cat_ids = \BCC\PeepSo\Repositories\PeepSoPageRepository::getCategoryIdsForPage((int) $page->ID);
 
         if (!$cat_ids) {
             $log[] = "  ⚠ No categories";
@@ -140,7 +105,7 @@ function bcc_repair_engine($page_id = null) {
                    Create missing CPT
                 ---------------------------- */
 
-                $cpt_id = BCCPeepSoDomainAbstractPageType::create_from_page_by_type($page->ID, $cpt);
+                $cpt_id = \BCC\PeepSo\Domain\AbstractPageType::create_from_page_by_type($page->ID, $cpt);
 
                 if (!$cpt_id) {
                     $log[] = "  ❌ Failed creating {$cpt}";
