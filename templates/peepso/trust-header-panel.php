@@ -75,18 +75,22 @@ $report_active_tip   = 'Confidentially report this user to admins for investigat
 // Login gate attribute for interactive buttons
 $login_gate = ! $logged_in ? ' data-requires-login="1" disabled' : '';
 
-// Flag data (signal only — no score impact)
-$flag_count    = 0;
-$viewer_flagged = false;
-$page_owner_id = $data['page_owner_id'] ?? 0;
-if ( class_exists( '\\BCC\\Trust\\Services\\FlagService' ) ) {
-    $flag_count    = \BCC\Trust\Services\FlagService::getFlagCount( $page_id );
-    if ( $logged_in ) {
-        $viewer_flagged = \BCC\Trust\Services\FlagService::hasUserFlagged( $page_id, get_current_user_id() );
-    }
-}
+// Flag data (signal only — no score impact).
+// $flag_count and $viewer_flagged are resolved by the injection layer
+// (trust-header-injection.php) and passed into this template's scope.
+$flag_count     = $flag_count ?? 0;
+$viewer_flagged = $viewer_flagged ?? false;
+$page_owner_id  = $data['page_owner_id'] ?? 0;
 $is_own_page = $logged_in && (int) get_current_user_id() === (int) $page_owner_id;
+$system_degraded = !empty( $data['system_degraded'] );
 ?>
+
+<?php if ( $system_degraded ) : ?>
+<div class="bcc-trust-header__degraded-banner" role="alert"
+     style="background:#fef3cd;border:1px solid #ffc107;border-radius:6px;padding:8px 14px;margin-bottom:10px;font-size:13px;color:#856404;text-align:center;">
+    Trust data is temporarily limited. Scores may not reflect the latest activity. Voting and endorsements are paused.
+</div>
+<?php endif; ?>
 
 <div class="bcc-trust-header"
      role="region"
@@ -197,13 +201,13 @@ $is_own_page = $logged_in && (int) get_current_user_id() === (int) $page_owner_i
         <div class="bcc-trust-header__block bcc-trust-header__secondary-actions">
             <button type="button"
                     class="bcc-trust-header__flag-btn <?php echo $viewer_flagged ? 'is-active' : ''; ?>"
-                    data-action="<?php echo $viewer_flagged ? 'unflag' : 'flag'; ?>"
+                    data-action="<?php echo esc_attr( $viewer_flagged ? 'unflag' : 'flag' ); ?>"
                     data-tooltip="<?php echo esc_attr( $flag_active_tip ); ?>"
-                    aria-pressed="<?php echo $viewer_flagged ? 'true' : 'false'; ?>"
-                    aria-label="<?php echo $viewer_flagged ? 'Remove flag' : 'Flag this page'; ?>"
+                    aria-pressed="<?php echo esc_attr( $viewer_flagged ? 'true' : 'false' ); ?>"
+                    aria-label="<?php echo esc_attr( $viewer_flagged ? 'Remove flag' : 'Flag this page' ); ?>"
                     <?php echo $login_gate; ?>>
                 <span aria-hidden="true">&#9873;</span>
-                <span class="bcc-trust-header__flag-label"><?php echo $viewer_flagged ? 'Flagged' : 'Flag'; ?></span>
+                <span class="bcc-trust-header__flag-label"><?php echo esc_html( $viewer_flagged ? 'Flagged' : 'Flag' ); ?></span>
                 <?php if ( $flag_count > 0 ) : ?>
                     <span class="bcc-trust-header__flag-count"><?php echo esc_html( $flag_count ); ?></span>
                 <?php endif; ?>

@@ -55,8 +55,8 @@ function bcc_user_is_owner($post_id) {
         return \BCC\Core\Permissions\Permissions::owns_page((int) $post_id, get_current_user_id());
     }
 
-    // Fallback when bcc-core is not active.
-    $author_id = (int) get_post_field('post_author', $post_id);
-
-    return $author_id === get_current_user_id();
+    // Fail closed when bcc-core is not active — post_author may be an
+    // admin who created the page on behalf of the owner, not the owner
+    // themselves. Granting access based on post_author is incorrect.
+    return false;
 }

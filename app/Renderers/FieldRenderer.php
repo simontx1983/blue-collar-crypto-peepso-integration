@@ -16,6 +16,7 @@ class FieldRenderer
     private int $post_id;
     private string $field;
     private string $label;
+    /** @var mixed */
     private $value;
     private string $type;
     private string $options;
@@ -23,12 +24,14 @@ class FieldRenderer
     private bool $repeater;
     private string $sub;
     private int $row;
+    /** @var mixed */
     private $display_value;
 
     /* ======================================================
        CONSTRUCTOR
     ====================================================== */
 
+    /** @param array<string, mixed> $args */
     public function __construct(array $args = [])
     {
         $a = wp_parse_args($args, [
@@ -258,13 +261,13 @@ class FieldRenderer
 
         return sprintf(
             'data-post="%s" data-field="%s" data-type="%s" data-value="%s" data-repeater="%s" data-sub="%s" data-row="%s" data-options="%s"',
-            esc_attr($this->post_id),
+            esc_attr((string) $this->post_id),
             esc_attr($this->field),
             esc_attr($this->type),
             esc_attr($raw_value),
-            esc_attr($this->repeater ? 1 : 0),
+            esc_attr($this->repeater ? '1' : '0'),
             esc_attr($this->sub),
-            esc_attr($this->row),
+            esc_attr((string) $this->row),
             esc_attr($this->options)
         );
     }
@@ -294,7 +297,7 @@ class FieldRenderer
         $label = $labels[$vis] ?? $labels['public'];
 
         echo '<button class="bcc-visibility-pill ' . esc_attr($vis) . '" ';
-        echo 'data-post="' . esc_attr($this->post_id) . '" ';
+        echo 'data-post="' . esc_attr((string) $this->post_id) . '" ';
         echo 'data-field="' . esc_attr($this->field) . '" ';
         echo 'data-current="' . esc_attr($vis) . '">';
         echo esc_html($label);

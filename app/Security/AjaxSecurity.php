@@ -18,7 +18,17 @@ class AjaxSecurity
 
     public static function require_edit_permission(int $post_id): void
     {
-        if (class_exists('\\BCC\\Core\\Permissions\\Permissions') && !\BCC\Core\Permissions\Permissions::is_not_suspended()) {
+        // Only enforce suspension if the trust-engine provides a real
+        // TrustReadService. When trust-engine is deactivated, the
+        // NullTrustReadService treats ALL users as suspended (fail-closed).
+        // Without this guard, every AJAX action (gallery, inline edit,
+        // visibility) would be blocked site-wide during a trust-engine outage.
+        if (
+            class_exists('\\BCC\\Core\\Permissions\\Permissions')
+            && class_exists('\\BCC\\Core\\ServiceLocator')
+            && \BCC\Core\ServiceLocator::hasRealService(\BCC\Core\Contracts\TrustReadServiceInterface::class)
+            && !\BCC\Core\Permissions\Permissions::is_not_suspended()
+        ) {
             wp_send_json_error(['message' => 'Account suspended']);
         }
 
@@ -50,6 +60,7 @@ class AjaxSecurity
         }
     }
 
+    /** @param array<int, string> $allowed_mimes */
     public static function verify_file_mime(string $file_path, array $allowed_mimes): string|false
     {
         if (!file_exists($file_path)) {

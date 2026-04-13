@@ -98,7 +98,7 @@ class InlineEditController
         }
 
         if ($type === 'gallery') {
-            if (is_string($value) && !empty($value)) {
+            if (!empty($value)) {
                 $value = array_map('intval', explode(',', $value));
             } else {
                 $value = [];

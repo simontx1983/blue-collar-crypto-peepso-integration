@@ -12,22 +12,37 @@ if (!defined('ABSPATH')) exit;
 | - private  → owner only
 */
 
+/**
+ * Internal cache accessor. Returns a reference to the static visibility
+ * cache so both bcc_get_field_visibility() and bcc_clear_visibility_cache()
+ * can share the same storage without a global variable.
+ *
+ * @return array<string, string>
+ */
+if (!function_exists('_bcc_vis_cache')) {
+
+function &_bcc_vis_cache(): array {
+    static $cache = [];
+    return $cache;
+}
+
+}
+
 if (!function_exists('bcc_get_field_visibility')) {
 
 function bcc_get_field_visibility($post_id, $field) {
 
-    // Global cache so bcc_clear_visibility_cache() can actually reach it.
-    global $bcc_vis_cache;
+    $cache = &_bcc_vis_cache();
 
     $cache_key = $post_id . '_' . $field;
 
-    if (isset($bcc_vis_cache[$cache_key])) {
-        return $bcc_vis_cache[$cache_key];
+    if (isset($cache[$cache_key])) {
+        return $cache[$cache_key];
     }
 
     $vis = get_post_meta($post_id, '_bcc_vis_' . $field, true) ?: 'public';
 
-    $bcc_vis_cache[$cache_key] = $vis;
+    $cache[$cache_key] = $vis;
 
     return $vis;
 }
@@ -126,23 +141,23 @@ function bcc_set_field_visibility($post_id, $field, $visibility) {
 if (!function_exists('bcc_clear_visibility_cache')) {
 
 function bcc_clear_visibility_cache($post_id = null, $field = null) {
-    global $bcc_vis_cache;
+    $cache = &_bcc_vis_cache();
 
-    if (!is_array($bcc_vis_cache)) {
+    if (!is_array($cache)) {
         return true;
     }
 
     if ($post_id && $field) {
-        unset($bcc_vis_cache[$post_id . '_' . $field]);
+        unset($cache[$post_id . '_' . $field]);
     } elseif ($post_id) {
         $prefix = $post_id . '_';
-        foreach (array_keys($bcc_vis_cache) as $key) {
+        foreach (array_keys($cache) as $key) {
             if (strpos($key, $prefix) === 0) {
-                unset($bcc_vis_cache[$key]);
+                unset($cache[$key]);
             }
         }
     } else {
-        $bcc_vis_cache = [];
+        $cache = [];
     }
 
     return true;

@@ -25,18 +25,36 @@ add_action('wp', function () {
 
     $page_id = $post->ID;
 
-    // Skip if integrity was already confirmed for this page
+    // Skip if integrity was already confirmed for this page.
+    // This flag is cleared when the page's category changes (see hook below).
     if (get_post_meta($page_id, '_bcc_integrity_ok', true)) {
         return;
     }
 
-    // Atomic lock: wp_cache_add returns false if the key already exists,
-    // preventing the TOCTOU race that get_transient/set_transient has.
-    // Falls back to a DB-level option lock when no persistent object cache is configured.
+    // Only the page owner should trigger shadow CPT creation —
+    // visitors should not pay the wp_insert_post() cost.
+    if (function_exists('bcc_user_is_owner') && !bcc_user_is_owner($page_id)) {
+        return;
+    }
+
+    // Atomic lock with TTL: prevents stuck locks if the process crashes.
+    // wp_cache_add is atomic (returns false if key exists). For the DB
+    // fallback, use set_transient with a 30-second TTL — if the process
+    // dies, the lock self-heals when the transient expires. The old
+    // add_option approach had no TTL and stuck locks were permanent.
     $lock_key = 'bcc_integrity_lock_' . $page_id;
-    $lock_acquired = wp_using_ext_object_cache()
-        ? wp_cache_add($lock_key, 1, 'bcc_locks', 30)
-        : add_option('_lock_' . $lock_key, 1, '', 'no');
+    if (wp_using_ext_object_cache()) {
+        $lock_acquired = wp_cache_add($lock_key, 1, 'bcc_locks', 30);
+    } else {
+        // Check if lock already exists and is still fresh.
+        $existing = get_transient('_lock_' . $lock_key);
+        if ($existing) {
+            $lock_acquired = false;
+        } else {
+            set_transient('_lock_' . $lock_key, 1, 30);
+            $lock_acquired = true;
+        }
+    }
 
     if (!$lock_acquired) {
         return;
@@ -47,7 +65,7 @@ add_action('wp', function () {
         if (wp_using_ext_object_cache()) {
             wp_cache_delete($lock_key, 'bcc_locks');
         } else {
-            delete_option('_lock_' . $lock_key);
+            delete_transient('_lock_' . $lock_key);
         }
     };
 
@@ -116,6 +134,27 @@ add_action('save_post', function ($post_id, $post) {
 
 // Title sync is handled by page-to-cpt-sync.php (shutdown hook).
 // Removed duplicate save_post_peepso-page hook that was causing double wp_update_post calls.
+
+/**
+ * Invalidate the integrity flag when a page's categories change.
+ * This forces the next page load to re-check and potentially create/update
+ * the shadow CPT for the new category.
+ */
+add_action('set_object_terms', function ($object_id, $terms, $tt_ids, $taxonomy) {
+    // PeepSo page categories use the 'peepso_page_categories' relation table,
+    // not WP taxonomies. But some integrations may fire set_object_terms.
+    // Also hook into PeepSo-specific actions if available.
+    if (get_post_type($object_id) === 'peepso-page') {
+        delete_post_meta($object_id, '_bcc_integrity_ok');
+    }
+}, 10, 4);
+
+// PeepSo uses its own category system — hook into page saves to detect
+// category changes and clear the integrity flag.
+add_action('save_post_peepso-page', function ($post_id) {
+    if (wp_is_post_revision($post_id)) return;
+    delete_post_meta($post_id, '_bcc_integrity_ok');
+}, 5);
 
 /**
  * Lock CPT title editing

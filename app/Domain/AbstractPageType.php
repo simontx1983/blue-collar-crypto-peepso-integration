@@ -17,8 +17,10 @@ abstract class AbstractPageType
 
     abstract public static function post_type(): string;
 
+    /** @return array<int, string> */
     abstract public static function fields(): array;
 
+    /** @return array<int, string> */
     public static function repeater_subfields(string $repeater): array
     {
         return [];
@@ -56,7 +58,7 @@ abstract class AbstractPageType
         $found = get_posts([
             'post_type'      => static::post_type(),
             'meta_key'       => '_peepso_page_id',
-            'meta_value'     => $page_id,
+            'meta_value'     => (string) $page_id,
             'posts_per_page' => 1,
             'fields'         => 'ids',
             'no_found_rows'  => true
@@ -83,7 +85,7 @@ abstract class AbstractPageType
             'post_author' => (int) $page->post_author
         ]);
 
-        if (!$id || is_wp_error($id)) {
+        if (!$id) {
             return 0;
         }
 

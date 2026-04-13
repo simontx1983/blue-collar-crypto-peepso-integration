@@ -33,6 +33,9 @@ class GalleryController
        HELPERS
     ====================================================== */
 
+    /**
+     * @return object
+     */
     private static function getCollectionOrFail(int $post_id, int $row)
     {
         $collection = GalleryRepository::get_or_create_collection(
@@ -124,7 +127,7 @@ class GalleryController
             }
 
             $file_info = wp_check_filetype_and_ext($tmp_name, $name);
-            $mime = $file_info['type'] ?? '';
+            $mime = $file_info['type'];
 
             if (!$mime || !in_array($mime, $allowed_mimes, true)) {
                 continue;
@@ -271,7 +274,6 @@ class GalleryController
                 'page'     => max(1, $page),
                 'per_page' => max(1, min(50, $per_page)),
             ]);
-            return;
         }
 
         $page = max(1, $page);
@@ -280,7 +282,7 @@ class GalleryController
         $result = GalleryRepository::get_images_paged((int) $collection->id, $page, $per_page);
 
         $items = [];
-        foreach (($result['items'] ?? []) as $img) {
+        foreach ($result['items'] as $img) {
             $items[] = [
                 'id'        => (int) $img->id,
                 'url'       => set_url_scheme((string) $img->url),
@@ -290,7 +292,7 @@ class GalleryController
 
         wp_send_json_success([
             'items' => $items,
-            'total' => (int) ($result['total'] ?? 0),
+            'total' => $result['total'],
             'page'  => (int) $page,
             'per_page' => (int) $per_page,
         ]);

@@ -17,7 +17,16 @@ if (!defined('ABSPATH')) exit;
    Queue pages modified in this request
 ---------------------------------------------------- */
 
-$GLOBALS['bcc_pending_peepso_pages'] = [];
+/**
+ * Accessor for the pending-pages queue. Uses a static local variable
+ * instead of $GLOBALS to avoid polluting the global namespace.
+ *
+ * @return array<int, array{title: string, author: int}> Reference to the queue.
+ */
+function &bcc_pending_peepso_pages(): array {
+    static $pending = [];
+    return $pending;
+}
 
 add_action('save_post_peepso-page', function ($post_id, $post, $update) {
 
@@ -28,7 +37,8 @@ add_action('save_post_peepso-page', function ($post_id, $post, $update) {
     if (isset($queued[$post_id])) return;
     $queued[$post_id] = true;
 
-    $GLOBALS['bcc_pending_peepso_pages'][$post_id] = [
+    $pending = &bcc_pending_peepso_pages();
+    $pending[$post_id] = [
         'title'  => $post->post_title,
         'author' => (int) $post->post_author,
     ];
@@ -45,14 +55,15 @@ add_action('save_post_peepso-page', function ($post_id, $post, $update) {
 
 add_action('shutdown', function () {
 
-    if (empty($GLOBALS['bcc_pending_peepso_pages'])) return;
+    $pending = &bcc_pending_peepso_pages();
+    if (empty($pending)) return;
     if (!function_exists('bcc_get_category_map')) return;
 
     if (!\BCC\PeepSo\Repositories\PeepSoPageRepository::tableExists()) return;
 
     $map = bcc_get_category_map();
 
-    foreach ($GLOBALS['bcc_pending_peepso_pages'] as $page_id => $data) {
+    foreach ($pending as $page_id => $data) {
 
         $rows = \BCC\PeepSo\Repositories\PeepSoPageRepository::getCategoryRowsForPage((int) $page_id);
 

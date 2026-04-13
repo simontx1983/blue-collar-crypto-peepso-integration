@@ -88,6 +88,7 @@ class GalleryRepository
         return $result;
     }
 
+    /** @return object|null */
     public static function get_or_create_collection(int $post_id, int $user_id, int $sort_order)
     {
         global $wpdb;
@@ -169,6 +170,7 @@ class GalleryRepository
         return $count;
     }
 
+    /** @param array<string, mixed> $data */
     public static function insert_image(int $collection_id, array $data): int
     {
         global $wpdb;
@@ -234,6 +236,7 @@ class GalleryRepository
         return $image_id;
     }
 
+    /** @return array{items: array<int, object>, total: int} */
     public static function get_images_paged(int $collection_id, int $page = 1, int $per_page = 12): array
     {
         $page = max(1, $page);
@@ -277,6 +280,7 @@ class GalleryRepository
         return $result;
     }
 
+    /** @param array<int, int> $ordered_ids */
     public static function update_sort_orders(int $collection_id, array $ordered_ids): bool
     {
         global $wpdb;
@@ -324,6 +328,10 @@ class GalleryRepository
         return true;
     }
 
+    /**
+     * @param array<int, int> $image_ids
+     * @return array{deleted: array<int, object>, failed: array<int, int>}
+     */
     public static function delete_images_bulk(array $image_ids, int $collection_id): array
     {
         global $wpdb;
@@ -376,7 +384,7 @@ class GalleryRepository
                 return ['deleted' => [], 'failed' => $image_ids];
             }
 
-            $wpdb->query(
+            $update_result = $wpdb->query(
                 $wpdb->prepare(
                     "UPDATE " . self::collections_table() . "
                      SET image_count = GREATEST(image_count - %d, 0)
@@ -386,7 +394,7 @@ class GalleryRepository
                 )
             );
 
-            if ($wpdb->last_error) {
+            if ($update_result === false) {
                 $wpdb->query('ROLLBACK');
                 return ['deleted' => [], 'failed' => $image_ids];
             }
@@ -399,6 +407,7 @@ class GalleryRepository
         return ['deleted' => $deleted, 'failed' => $failed];
     }
 
+    /** @return object|false */
     public static function delete_image(int $image_id, int $collection_id = 0)
     {
         global $wpdb;
@@ -432,7 +441,7 @@ class GalleryRepository
             return false;
         }
 
-        $wpdb->query(
+        $update_result = $wpdb->query(
             $wpdb->prepare(
                 "UPDATE " . self::collections_table() . "
                  SET image_count = GREATEST(image_count - 1, 0)
@@ -441,7 +450,7 @@ class GalleryRepository
             )
         );
 
-        if ($wpdb->last_error) {
+        if ($update_result === false) {
             $wpdb->query('ROLLBACK');
             return false;
         }

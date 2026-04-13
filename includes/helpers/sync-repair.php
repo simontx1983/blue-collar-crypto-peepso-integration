@@ -41,12 +41,27 @@ function bcc_repair_engine($page_id = null) {
 
     } else {
 
-        $pages = get_posts([
-            'post_type'      => 'peepso-page',
-            'posts_per_page' => 500,
-            'post_status'    => 'publish',
-            'no_found_rows'  => true,
-        ]);
+        $pages  = [];
+        $offset = 0;
+        $batch  = 50;
+
+        do {
+            $chunk = get_posts([
+                'post_type'      => 'peepso-page',
+                'posts_per_page' => $batch,
+                'offset'         => $offset,
+                'post_status'    => 'publish',
+                'no_found_rows'  => true,
+                'orderby'        => 'ID',
+                'order'          => 'ASC',
+            ]);
+
+            foreach ($chunk as $p) {
+                $pages[] = $p;
+            }
+
+            $offset += $batch;
+        } while (count($chunk) === $batch);
     }
 
     foreach ($pages as $page) {

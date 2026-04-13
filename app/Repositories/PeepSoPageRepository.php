@@ -50,36 +50,29 @@ final class PeepSoPageRepository
         return $wpdb->prefix . 'peepso_page_categories';
     }
 
-    /**
-     * Get category IDs for a given page.
-     *
-     * @param int $pageId PeepSo page ID.
-     * @return int[] Array of category post IDs.
-     */
     private const CACHE_GROUP = 'bcc_peepso_pages';
     private const CACHE_TTL   = 3600; // seconds
 
+    /**
+     * Get category IDs for a given page.
+     *
+     * Delegates to getCategoryRowsForPage() to avoid duplicating the query,
+     * then extracts the integer IDs from the row objects.
+     *
+     * @param int $pageId PeepSo page ID.
+     * @return array<int, int> Array of category post IDs.
+     */
     public static function getCategoryIdsForPage(int $pageId): array
     {
-        if (!self::tableExists()) {
-            return [];
-        }
-
         $cache_key = "cat_ids_{$pageId}";
         $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
         if ($cached !== false) {
             return $cached;
         }
 
-        global $wpdb;
-        $table = self::tableName();
+        $rows   = self::getCategoryRowsForPage($pageId);
+        $result = array_map(fn(object $row): int => (int) $row->cat_id, $rows);
 
-        $ids = $wpdb->get_col($wpdb->prepare(
-            "SELECT " . self::CAT_COL . " FROM {$table} WHERE " . self::PAGE_COL . " = %d",
-            $pageId
-        ));
-
-        $result = array_map('intval', $ids);
         wp_cache_set($cache_key, $result, self::CACHE_GROUP, self::CACHE_TTL);
         return $result;
     }

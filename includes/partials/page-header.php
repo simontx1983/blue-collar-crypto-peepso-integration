@@ -49,7 +49,7 @@ if (!isset($page_segment)) {
 			}
 			?>
 
-			<div class="ps-focus__avatar-change-wrapper ps-js-avatar-button-wrapper" <?php echo $avatar_box_attrs ?>>
+			<div class="ps-focus__avatar-change-wrapper ps-js-avatar-button-wrapper" <?php echo wp_kses($avatar_box_attrs, ['onclick' => true, 'style' => true]); ?>>
 				<?php if ($PeepSoPageUser->can('manage_page')) { ?>
 					<a href="#" class="ps-focus__avatar-change ps-js-avatar-button">
 						<i class="gcis gci-camera"></i><span><?php echo esc_html__('Change avatar', 'pageso'); ?></span>
@@ -65,7 +65,7 @@ if (!isset($page_segment)) {
 		}
 		?>
 
-		<div class="ps-focus__cover-inner ps-js-cover-button-popup" <?php echo $cover_box_attrs ?>>
+		<div class="ps-focus__cover-inner ps-js-cover-button-popup" <?php echo wp_kses($cover_box_attrs, ['style' => true, 'data-cover-url' => true]); ?>>
 			<div class="ps-focus__cover-actions ps-js-page-header-actions ps-js-loading">
 				<button class="ps-focus__cover-action">
 					<img src="<?php echo esc_url(PeepSo::get_asset('images/ajax-loader.gif')); ?>" />

@@ -24,7 +24,8 @@ if ($can_edit) {
     ]);
 
     foreach ($networks as $n) {
-        $network_options[] = $n->ID . ':' . $n->post_title;
+        $safe_title = str_replace([',', ':'], [' ', '-'], $n->post_title);
+        $network_options[] = $n->ID . ':' . $safe_title;
     }
     $network_options_str = implode(',', $network_options);
 }

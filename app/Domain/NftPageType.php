@@ -13,6 +13,7 @@ class NftPageType extends AbstractPageType
         return 'nft';
     }
 
+    /** @return array<int, string> */
     public static function fields(): array
     {
         return [
@@ -43,6 +44,7 @@ class NftPageType extends AbstractPageType
         ];
     }
 
+    /** @return array<int, string> */
     public static function repeater_subfields(string $repeater): array
     {
         if ($repeater === 'nft_collections') {
@@ -50,7 +52,6 @@ class NftPageType extends AbstractPageType
                 'collection_name',
                 'collection_gallery',
                 'collection_description',
-                'post_type',
                 'collection_mint_url',
                 'collection_marketplace_url',
                 'collection_x_account',

@@ -13,6 +13,7 @@ class ValidatorPageType extends AbstractPageType
         return 'validators';
     }
 
+    /** @return array<int, string> */
     public static function fields(): array
     {
         return [
@@ -45,6 +46,7 @@ class ValidatorPageType extends AbstractPageType
         ];
     }
 
+    /** @return array<int, string> */
     public static function repeater_subfields(string $repeater): array
     {
         if ($repeater === 'chains_you_validate_for') {

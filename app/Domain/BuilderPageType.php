@@ -13,6 +13,7 @@ class BuilderPageType extends AbstractPageType
         return 'builder';
     }
 
+    /** @return array<int, string> */
     public static function fields(): array
     {
         return [
@@ -44,6 +45,7 @@ class BuilderPageType extends AbstractPageType
         ];
     }
 
+    /** @return array<int, string> */
     public static function repeater_subfields(string $repeater): array
     {
         if ($repeater === 'builder_contracts') {

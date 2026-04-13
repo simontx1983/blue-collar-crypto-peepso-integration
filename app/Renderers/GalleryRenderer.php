@@ -27,7 +27,7 @@ class GalleryRenderer
         }
 
         $result = GalleryRepository::get_images_paged((int) $collection->id, 1, 12);
-        $images = $result['items'] ?? [];
+        $images = $result['items'];
 
         if (!$images) {
             echo '<div class="bcc-gallery-empty">—</div>';
@@ -43,11 +43,17 @@ class GalleryRenderer
 
     public static function render_edit(int $post_id, string $data_attrs, int $row = 0): void
     {
-        $collection = GalleryRepository::get_or_create_collection(
-            $post_id,
-            get_current_user_id(),
-            $row
-        );
+        // Read-only lookup first — avoid START TRANSACTION on every page view.
+        $collection = GalleryRepository::get_collection($post_id, $row);
+
+        // Lazy-create only when no collection exists yet.
+        if (!$collection) {
+            $collection = GalleryRepository::get_or_create_collection(
+                $post_id,
+                get_current_user_id(),
+                $row
+            );
+        }
 
         if (!$collection) {
             echo '<div class="bcc-gallery-empty">Unable to load gallery</div>';
@@ -56,12 +62,12 @@ class GalleryRenderer
 
         $result = GalleryRepository::get_images_paged((int) $collection->id, 1, 12);
 
-        $images = $result['items'] ?? [];
-        $total  = (int) ($result['total'] ?? 0);
+        $images = $result['items'];
+        $total  = $result['total'];
 
         echo '<div class="bcc-gallery-container" ' . $data_attrs .
-             ' data-post="' . esc_attr($post_id) . '"' .
-             ' data-row="' . esc_attr($row) . '">';
+             ' data-post="' . esc_attr((string) $post_id) . '"' .
+             ' data-row="' . esc_attr((string) $row) . '">';
 
         echo '<input type="file"
                     class="bcc-gallery-file-input"
@@ -77,7 +83,7 @@ class GalleryRenderer
 
         echo '<button type="button" class="bcc-thumb-arrow bcc-thumb-prev" aria-label="Scroll thumbnails left">‹</button>';
 
-        echo '<div class="bcc-gallery-thumbnails" data-total="' . esc_attr($total) . '" data-page="1">';
+        echo '<div class="bcc-gallery-thumbnails" data-total="' . esc_attr((string) $total) . '" data-page="1">';
 
         foreach ($images as $img) {
             self::renderThumbnail($img, $row);
@@ -110,6 +116,7 @@ class GalleryRenderer
     /* ======================================================
        MAIN IMAGE SLIDER
     ====================================================== */
+    /** @param array<int, object> $images */
     private static function renderMainSlider(array $images): void
     {
         echo '<div class="bcc-gallery-slider-wrapper">';
@@ -156,7 +163,7 @@ class GalleryRenderer
     ====================================================== */
     private static function renderThumbnail(object $img, int $row = 0): void
     {
-        echo '<div class="bcc-gallery-thumb-wrapper" draggable="true" data-id="' . esc_attr($img->id) . '" data-row="' . esc_attr($row) . '">';
+        echo '<div class="bcc-gallery-thumb-wrapper" draggable="true" data-id="' . esc_attr((string) $img->id) . '" data-row="' . esc_attr((string) $row) . '">';
 
         echo '<input type="checkbox" class="bcc-thumb-select">';
 

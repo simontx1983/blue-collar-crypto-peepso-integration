@@ -13,6 +13,7 @@ class DaoPageType extends AbstractPageType
         return 'dao';
     }
 
+    /** @return array<int, string> */
     public static function fields(): array
     {
         return [
@@ -46,6 +47,7 @@ class DaoPageType extends AbstractPageType
         ];
     }
 
+    /** @return array<int, string> */
     public static function repeater_subfields(string $repeater): array
     {
         if ($repeater === 'dao_members') {

@@ -1,10 +1,10 @@
 <?php
 if (!defined('ABSPATH')) exit;
 
-if (defined('BCC_BOOTSTRAP_LOADED')) {
+if (defined('BCC_PEEPSO_BOOTSTRAP_LOADED')) {
     return;
 }
-define('BCC_BOOTSTRAP_LOADED', true);
+define('BCC_PEEPSO_BOOTSTRAP_LOADED', true);
 
 /* ======================================================
    CATEGORY → CPT MAP (single source of truth)
@@ -18,13 +18,39 @@ if (!function_exists('bcc_get_category_map')) {
      * Filterable so themes/other plugins can extend.
      */
     function bcc_get_category_map(): array {
-        return apply_filters('bcc_category_map', [
-            254 => ['cpt' => 'validators', 'label' => 'Validators'],
-            268 => ['cpt' => 'builder',    'label' => 'Builder'],
-            269 => ['cpt' => 'builder',    'label' => 'Builder'],
-            253 => ['cpt' => 'nft',        'label' => 'NFT'],
-            1901 => ['cpt' => 'dao',        'label' => 'DAO'],
+        // Resolve category IDs from slugs at runtime so the map is
+        // portable across environments (dev / staging / production).
+        // Results are cached for the duration of the request.
+        static $resolved = null;
+        if ($resolved !== null) {
+            return $resolved;
+        }
+
+        $slug_to_cpt = apply_filters('bcc_category_slug_map', [
+            'validators' => ['cpt' => 'validators', 'label' => 'Validators'],
+            'builder'    => ['cpt' => 'builder',    'label' => 'Builder'],
+            'builders'   => ['cpt' => 'builder',    'label' => 'Builder'],
+            'nft'        => ['cpt' => 'nft',        'label' => 'NFT'],
+            'dao'        => ['cpt' => 'dao',        'label' => 'DAO'],
         ]);
+
+        $map = [];
+        $cats = get_posts([
+            'post_type'      => 'peepso-page-cat',
+            'post_status'    => 'publish',
+            'posts_per_page' => 100,
+            'fields'         => 'all',
+        ]);
+
+        foreach ($cats as $cat) {
+            $slug = $cat->post_name;
+            if (isset($slug_to_cpt[$slug])) {
+                $map[$cat->ID] = $slug_to_cpt[$slug];
+            }
+        }
+
+        $resolved = apply_filters('bcc_category_map', $map);
+        return $resolved;
     }
 }
 

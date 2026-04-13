@@ -40,6 +40,16 @@ function bcc_render_trust_header_panel( int $page_id, string $mode ) {
     }
     $rendered_for[ $page_id ] = true;
 
+    // Resolve flag data here so the template does not call trust-engine classes directly.
+    $flag_count     = 0;
+    $viewer_flagged = false;
+    if ( class_exists( '\\BCC\\Trust\\Services\\FlagService' ) ) {
+        $flag_count = \BCC\Trust\Services\FlagService::getFlagCount( $page_id );
+        if ( is_user_logged_in() ) {
+            $viewer_flagged = \BCC\Trust\Services\FlagService::hasUserFlagged( $page_id, get_current_user_id() );
+        }
+    }
+
     include BCC_PLUGIN_PATH . 'templates/peepso/trust-header-panel.php';
 }
 

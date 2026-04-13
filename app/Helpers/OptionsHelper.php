@@ -12,6 +12,7 @@ class OptionsHelper
      * Converts options string to key-value map.
      * Format: "key1:value1,key2:value2"
      */
+    /** @return array<string, string> */
     public static function parse_options_string(string $options_str): array
     {
         $map = [];
