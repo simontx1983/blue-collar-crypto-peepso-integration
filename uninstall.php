@@ -15,23 +15,25 @@ global $wpdb;
 $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}bcc_collection_images");
 $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}bcc_collections");
 
-// 2. Delete all shadow CPT posts
+// 2. Delete all shadow CPT posts (batched to avoid memory exhaustion)
 $cpt_types = ['validators', 'nft', 'builder', 'dao'];
 foreach ($cpt_types as $cpt) {
-    $posts = get_posts([
-        'post_type'      => $cpt,
-        'posts_per_page' => -1,
-        'fields'         => 'ids',
-        'post_status'    => 'any',
-    ]);
-    foreach ($posts as $post_id) {
-        wp_delete_post($post_id, true);
-    }
+    do {
+        $posts = get_posts([
+            'post_type'      => $cpt,
+            'posts_per_page' => 100,
+            'post_status'    => 'any',
+            'fields'         => 'ids',
+        ]);
+        foreach ($posts as $post_id) {
+            wp_delete_post($post_id, true);
+        }
+    } while (!empty($posts));
 }
 
 // 3. Remove all BCC post meta (_bcc_*, _linked_*_id, _linked_cpts, _peepso_page_id, _peepso_cat_id)
-$wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key LIKE '\_bcc\_%'");
-$wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key LIKE '\_linked\_%'");
+$wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key >= '_bcc_' AND meta_key < '_bcc_~'");
+$wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key >= '_linked_' AND meta_key < '_linked_~'");
 $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_peepso_page_id'");
 $wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_peepso_cat_id'");
 

@@ -12,23 +12,7 @@ $has_nft = $nft_id > 0;
 $can_view = ( $has_nft && function_exists( 'bcc_user_can_view_post' ) ) ? bcc_user_can_view_post( $nft_id ) : false;
 $can_edit = ( $has_nft && function_exists( 'bcc_user_can_edit_post' ) ) ? bcc_user_can_edit_post( $nft_id ) : false;
 
-$network_options = [];
-$network_options_str = '';
-
-if ($can_edit) {
-    $networks = get_posts([
-        'post_type' => 'network',
-        'posts_per_page' => 100,
-        'orderby' => 'title',
-        'order' => 'ASC'
-    ]);
-
-    foreach ($networks as $n) {
-        $safe_title = str_replace([',', ':'], [' ', '-'], $n->post_title);
-        $network_options[] = $n->ID . ':' . $safe_title;
-    }
-    $network_options_str = implode(',', $network_options);
-}
+$network_options_str = $can_edit ? bcc_get_network_options_string() : '';
 ?>
 
 <div class="ps-nft-profile bcc-nft-profile">

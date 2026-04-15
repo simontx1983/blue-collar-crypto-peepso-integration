@@ -55,7 +55,7 @@ class VisibilityController
         // No class_exists guard — if AbstractPageType is unavailable, reject the request
         // rather than silently accepting arbitrary field names.
         $domain = \BCC\PeepSo\Domain\AbstractPageType::get_domain_for_post($post_id);
-        if (!$domain || !call_user_func([$domain, 'is_valid_field'], $field)) {
+        if (!$domain || !method_exists($domain, 'is_valid_field') || !call_user_func([$domain, 'is_valid_field'], $field)) {
             wp_send_json_error(['message' => 'Invalid field']);
         }
 

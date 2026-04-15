@@ -12,17 +12,18 @@ if (!defined('ABSPATH')) exit;
 
 /**
  * ==========================================================
- * Constants
+ * Constants — plugin-scoped to avoid collisions with other
+ * BCC plugins (bcc-core defines BCC_CORE_VERSION, etc.)
  * ==========================================================
  */
-define('BCC_VERSION', '1.0.0');
-define('BCC_PLUGIN_PATH', plugin_dir_path(__FILE__));
-define('BCC_INCLUDES_PATH', BCC_PLUGIN_PATH . 'includes/');
-define('BCC_TEMPLATES_PATH', BCC_PLUGIN_PATH . 'templates/');
-define('BCC_URL', plugin_dir_url(__FILE__));
+define('BCC_PEEPSO_VERSION', '1.0.0');
+define('BCC_PEEPSO_PLUGIN_PATH', plugin_dir_path(__FILE__));
+define('BCC_PEEPSO_INCLUDES_PATH', BCC_PEEPSO_PLUGIN_PATH . 'includes/');
+define('BCC_PEEPSO_TEMPLATES_PATH', BCC_PEEPSO_PLUGIN_PATH . 'templates/');
+define('BCC_PEEPSO_URL', plugin_dir_url(__FILE__));
 
 // ── PSR-4 autoloader ────────────────────────────────────────────────────────
-$bcc_peepso_autoloader = BCC_PLUGIN_PATH . 'vendor/autoload.php';
+$bcc_peepso_autoloader = BCC_PEEPSO_PLUGIN_PATH . 'vendor/autoload.php';
 if (file_exists($bcc_peepso_autoloader)) {
     require_once $bcc_peepso_autoloader;
 }
@@ -33,7 +34,7 @@ if (file_exists($bcc_peepso_autoloader)) {
  * ==========================================================
  */
 register_activation_hook(__FILE__, function () {
-    require_once BCC_INCLUDES_PATH . 'core/install.php';
+    require_once BCC_PEEPSO_INCLUDES_PATH . 'core/install.php';
     bcc_create_tables();
 });
 
@@ -72,7 +73,7 @@ function bcc_init() {
     }
 
     // Dependencies confirmed — load bootstrap (registers controllers, hooks, renderers).
-    $bootstrap = BCC_INCLUDES_PATH . 'core/bootstrap.php';
+    $bootstrap = BCC_PEEPSO_INCLUDES_PATH . 'core/bootstrap.php';
 
     if (file_exists($bootstrap)) {
         require_once $bootstrap;

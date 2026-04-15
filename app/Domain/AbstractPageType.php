@@ -97,15 +97,6 @@ abstract class AbstractPageType
         return (int) $id;
     }
 
-    public static function get_or_create_from_page(int $page_id): int
-    {
-        $id = static::get_id_from_page($page_id);
-
-        if ($id) return $id;
-
-        return static::create_from_page($page_id);
-    }
-
     /* ======================================================
        DOMAIN CLASS RESOLVER
     ====================================================== */
@@ -140,20 +131,4 @@ abstract class AbstractPageType
         return $class::create_from_page($page_id);
     }
 
-    /* ======================================================
-       PERMISSIONS
-    ====================================================== */
-
-    public static function can_edit(int $post_id, int $user_id = 0): bool
-    {
-        $user_id = $user_id ?: get_current_user_id();
-        return user_can($user_id, 'edit_post', $post_id);
-    }
-
-    public static function user_owns(int $post_id): bool
-    {
-        return function_exists('bcc_user_is_owner')
-            ? bcc_user_is_owner($post_id)
-            : static::can_edit($post_id);
-    }
 }

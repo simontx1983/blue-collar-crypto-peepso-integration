@@ -43,20 +43,30 @@ class GalleryRenderer
 
     public static function render_edit(int $post_id, string $data_attrs, int $row = 0): void
     {
-        // Read-only lookup first — avoid START TRANSACTION on every page view.
+        // Read-only lookup — collection is created on first upload, not on view.
         $collection = GalleryRepository::get_collection($post_id, $row);
 
-        // Lazy-create only when no collection exists yet.
         if (!$collection) {
-            $collection = GalleryRepository::get_or_create_collection(
-                $post_id,
-                get_current_user_id(),
-                $row
-            );
-        }
+            // No collection yet — render an empty upload prompt instead of
+            // creating a DB row during a read operation (M-6).
+            echo '<div class="bcc-gallery-container" ' . $data_attrs .
+                 ' data-post="' . esc_attr((string) $post_id) . '"' .
+                 ' data-row="' . esc_attr((string) $row) . '">';
 
-        if (!$collection) {
-            echo '<div class="bcc-gallery-empty">Unable to load gallery</div>';
+            echo '<input type="file"
+                        class="bcc-gallery-file-input"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        multiple
+                        style="display: none;">';
+
+            echo '<div class="bcc-gallery-empty-state" style="text-align:center;padding:2em;">';
+            echo '<p>Upload your first image to create a gallery.</p>';
+            echo '<button type="button" class="button button-primary bcc-gallery-upload">';
+            echo '<span class="dashicons dashicons-upload"></span> Upload Images';
+            echo '</button>';
+            echo '</div>';
+
+            echo '</div>';
             return;
         }
 

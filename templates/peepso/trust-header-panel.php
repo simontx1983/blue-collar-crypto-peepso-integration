@@ -239,10 +239,12 @@ $system_degraded = !empty( $data['system_degraded'] );
     <?php /* ── Trust Signals Block (embedded) ──────────────── */ ?>
     <div class="bcc-trust-header__block-embed bcc-trust-header__block-embed--signals">
         <?php
-        echo render_block( [
-            'blockName' => 'bcc-trust/trust-signals',
-            'attrs'     => [ 'pageId' => $page_id, 'embedded' => true ],
-        ] );
+        if ( \WP_Block_Type_Registry::get_instance()->is_registered( 'bcc-trust/trust-signals' ) ) {
+            echo render_block( [
+                'blockName' => 'bcc-trust/trust-signals',
+                'attrs'     => [ 'pageId' => $page_id, 'embedded' => true ],
+            ] );
+        }
         ?>
     </div>
 
@@ -251,13 +253,15 @@ $system_degraded = !empty( $data['system_degraded'] );
     <?php /* ── Wallet Verification Block (embedded, compact) ─ */ ?>
     <div class="bcc-trust-header__block-embed bcc-trust-header__block-embed--wallet">
         <?php
-        echo render_block( [
-            'blockName' => 'bcc-trust/wallet-verification',
-            'attrs'     => [
-                'pageId'  => $page_id,
-                'compact' => true,
-            ],
-        ] );
+        if ( \WP_Block_Type_Registry::get_instance()->is_registered( 'bcc-trust/wallet-verification' ) ) {
+            echo render_block( [
+                'blockName' => 'bcc-trust/wallet-verification',
+                'attrs'     => [
+                    'pageId'  => $page_id,
+                    'compact' => true,
+                ],
+            ] );
+        }
         ?>
     </div>
 

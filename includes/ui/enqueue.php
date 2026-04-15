@@ -60,7 +60,12 @@ function bcc_enqueue_assets() {
 
     /* -----------------------------------------
        TRUST HEADER (registered by bcc-trust-engine)
+       These handles are only available when bcc-trust-engine is active.
     ----------------------------------------- */
-    wp_enqueue_style( 'bcc-trust-header' );
-    wp_enqueue_script( 'bcc-trust-header' );
+    if ( wp_style_is( 'bcc-trust-header', 'registered' ) ) {
+        wp_enqueue_style( 'bcc-trust-header' );
+    }
+    if ( wp_script_is( 'bcc-trust-header', 'registered' ) ) {
+        wp_enqueue_script( 'bcc-trust-header' );
+    }
 }

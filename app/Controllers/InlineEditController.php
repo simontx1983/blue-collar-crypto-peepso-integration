@@ -74,12 +74,12 @@ class InlineEditController
             wp_send_json_error('Unsupported post type');
         }
 
-        if (!call_user_func([$domain, 'is_valid_field'], $field)) {
+        if (!method_exists($domain, 'is_valid_field') || !call_user_func([$domain, 'is_valid_field'], $field)) {
             wp_send_json_error('Invalid field');
         }
 
         if ($repeater && $sub && $sub !== 'add_new') {
-            if (!call_user_func([$domain, 'is_valid_subfield'], $field, $sub)) {
+            if (!method_exists($domain, 'is_valid_subfield') || !call_user_func([$domain, 'is_valid_subfield'], $field, $sub)) {
                 wp_send_json_error('Invalid sub field');
             }
         }

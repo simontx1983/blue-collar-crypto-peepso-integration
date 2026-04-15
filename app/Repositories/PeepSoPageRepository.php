@@ -78,6 +78,19 @@ final class PeepSoPageRepository
     }
 
     /**
+     * Invalidate the cached category IDs for a given page.
+     *
+     * Call this whenever a page's category assignments change so that
+     * subsequent reads reflect the updated state.
+     *
+     * @param int $pageId PeepSo page ID.
+     */
+    public static function invalidateCategoryCache(int $pageId): void
+    {
+        wp_cache_delete("cat_ids_{$pageId}", self::CACHE_GROUP);
+    }
+
+    /**
      * Get category rows for a given page (category_id as 'cat_id').
      *
      * @param int $pageId PeepSo page ID.
@@ -98,21 +111,4 @@ final class PeepSoPageRepository
         ));
     }
 
-    /**
-     * Get table metadata for use by other code that needs to JOIN.
-     *
-     * @return array{table: string, page_col: string, cat_col: string}|null
-     */
-    public static function getTableInfo(): ?array
-    {
-        if (!self::tableExists()) {
-            return null;
-        }
-
-        return [
-            'table'    => self::tableName(),
-            'page_col' => self::PAGE_COL,
-            'cat_col'  => self::CAT_COL,
-        ];
-    }
 }

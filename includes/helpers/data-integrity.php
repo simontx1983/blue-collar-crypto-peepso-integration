@@ -38,21 +38,54 @@ add_action('wp', function () {
     }
 
     // Atomic lock with TTL: prevents stuck locks if the process crashes.
-    // wp_cache_add is atomic (returns false if key exists). For the DB
-    // fallback, use set_transient with a 30-second TTL — if the process
-    // dies, the lock self-heals when the transient expires. The old
-    // add_option approach had no TTL and stuck locks were permanent.
+    //
+    // Strategy:
+    //   - With ext object cache (Redis): wp_cache_add is atomic (returns
+    //     false if key exists). TTL provides self-healing.
+    //   - Without ext object cache: use INSERT IGNORE into wp_options.
+    //     The UNIQUE KEY on option_name provides atomicity. A timestamp
+    //     value enables stale-lock detection for self-healing.
+    //
+    // The old transient approach (get then set) had a TOCTOU race under
+    // concurrent requests, allowing duplicate shadow CPT creation.
     $lock_key = 'bcc_integrity_lock_' . $page_id;
+    $lock_ttl = 30; // seconds
+
     if (wp_using_ext_object_cache()) {
-        $lock_acquired = wp_cache_add($lock_key, 1, 'bcc_locks', 30);
+        $lock_acquired = wp_cache_add($lock_key, 1, 'bcc_locks', $lock_ttl);
     } else {
-        // Check if lock already exists and is still fresh.
-        $existing = get_transient('_lock_' . $lock_key);
-        if ($existing) {
-            $lock_acquired = false;
-        } else {
-            set_transient('_lock_' . $lock_key, 1, 30);
+        global $wpdb;
+        $option_name = '_bcc_lock_' . $lock_key;
+
+        // Atomic: INSERT IGNORE fails (returns 0) if the option_name already exists.
+        $inserted = $wpdb->query($wpdb->prepare(
+            "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload)
+             VALUES (%s, %s, 'no')",
+            $option_name,
+            (string) time()
+        ));
+
+        if ($inserted) {
             $lock_acquired = true;
+        } else {
+            // Lock exists — check if it's stale (older than TTL).
+            $lock_time = (int) $wpdb->get_var($wpdb->prepare(
+                "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s",
+                $option_name
+            ));
+            if ($lock_time > 0 && (time() - $lock_time) > $lock_ttl) {
+                // Stale lock — reclaim it atomically.
+                $reclaimed = $wpdb->query($wpdb->prepare(
+                    "UPDATE {$wpdb->options} SET option_value = %s
+                     WHERE option_name = %s AND option_value = %s",
+                    (string) time(),
+                    $option_name,
+                    (string) $lock_time
+                ));
+                $lock_acquired = ($reclaimed > 0);
+            } else {
+                $lock_acquired = false;
+            }
         }
     }
 
@@ -65,7 +98,8 @@ add_action('wp', function () {
         if (wp_using_ext_object_cache()) {
             wp_cache_delete($lock_key, 'bcc_locks');
         } else {
-            delete_transient('_lock_' . $lock_key);
+            global $wpdb;
+            $wpdb->delete($wpdb->options, ['option_name' => '_bcc_lock_' . $lock_key]);
         }
     };
 
@@ -140,21 +174,36 @@ add_action('save_post', function ($post_id, $post) {
  * This forces the next page load to re-check and potentially create/update
  * the shadow CPT for the new category.
  */
-add_action('set_object_terms', function ($object_id, $terms, $tt_ids, $taxonomy) {
-    // PeepSo page categories use the 'peepso_page_categories' relation table,
-    // not WP taxonomies. But some integrations may fire set_object_terms.
-    // Also hook into PeepSo-specific actions if available.
-    if (get_post_type($object_id) === 'peepso-page') {
-        delete_post_meta($object_id, '_bcc_integrity_ok');
-    }
-}, 10, 4);
-
 // PeepSo uses its own category system — hook into page saves to detect
 // category changes and clear the integrity flag.
 add_action('save_post_peepso-page', function ($post_id) {
     if (wp_is_post_revision($post_id)) return;
     delete_post_meta($post_id, '_bcc_integrity_ok');
+    \BCC\PeepSo\Repositories\PeepSoPageRepository::invalidateCategoryCache($post_id);
 }, 5);
+
+// Invalidate category cache when the peepso-page-cat CPT is updated
+// (covers admin re-assignment of categories to pages).
+add_action('save_post_peepso-page-cat', function ($post_id) {
+    if (wp_is_post_revision($post_id)) return;
+
+    // Bust the global category map cache (bcc_get_category_map).
+    wp_cache_delete('bcc_category_map', 'bcc_peepso');
+
+    // Category CPT changed — flush all page caches that reference it.
+    // Since the relation table maps page→cat, we query affected pages.
+    if (\BCC\PeepSo\Repositories\PeepSoPageRepository::tableExists()) {
+        global $wpdb;
+        $table = \BCC\PeepSo\Repositories\PeepSoPageRepository::tableName();
+        $page_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT pm_page_id FROM {$table} WHERE pm_cat_id = %d",
+            $post_id
+        ));
+        foreach ($page_ids as $page_id) {
+            \BCC\PeepSo\Repositories\PeepSoPageRepository::invalidateCategoryCache((int) $page_id);
+        }
+    }
+});
 
 /**
  * Lock CPT title editing
@@ -180,4 +229,28 @@ add_action('admin_notices', function () {
     echo '<div class="notice notice-warning is-dismissible"><p>';
     echo '⚠️ This content is linked to a PeepSo Page. Title and some settings are managed by the source page.';
     echo '</p></div>';
+});
+
+/**
+ * Periodic category map drift detection (admin-only, throttled to once per hour).
+ *
+ * Compares cached category map checksum against live DB state. On drift,
+ * auto-repairs by busting the cache and logging a warning. This catches
+ * silent invalidation bugs before they cause visible data corruption.
+ */
+add_action('admin_init', function () {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+    if (!function_exists('bcc_category_map_is_fresh')) {
+        return;
+    }
+    // Throttle: check at most once per hour per site.
+    $throttleKey = 'bcc_catmap_drift_check';
+    if (get_transient($throttleKey)) {
+        return;
+    }
+    set_transient($throttleKey, 1, HOUR_IN_SECONDS);
+
+    bcc_category_map_is_fresh();
 });

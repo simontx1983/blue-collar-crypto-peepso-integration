@@ -82,9 +82,23 @@ class GalleryController
 
         self::canEditOrFail($post_id);
 
+        // ── Per-post total caps (prevent storage abuse) ──────────────────
+        $maxCollections     = (int) apply_filters('bcc_gallery_max_collections', 10);
+        $maxImagesPerPost   = (int) apply_filters('bcc_gallery_max_images_per_post', 200);
+
+        $collectionCount = GalleryRepository::count_collections($post_id);
+        if ($collectionCount >= $maxCollections && $row >= $maxCollections) {
+            wp_send_json_error(['message' => 'Maximum collections reached (' . $maxCollections . ').']);
+        }
+
+        $totalImages = GalleryRepository::count_images_for_post($post_id);
+        if ($totalImages >= $maxImagesPerPost) {
+            wp_send_json_error(['message' => 'Total image limit reached for this page (' . $maxImagesPerPost . ').']);
+        }
+
         $collection = self::getCollectionOrFail($post_id, $row);
 
-        // Enforce per-collection image count cap to prevent abuse.
+        // Enforce per-collection image count cap.
         $max_images = (int) apply_filters('bcc_gallery_max_images', 50);
         $current_count = GalleryRepository::count_images((int) $collection->id);
         if ($current_count >= $max_images) {
@@ -114,6 +128,12 @@ class GalleryController
         $names = $_FILES['files']['name'] ?? [];
         $tmp   = $_FILES['files']['tmp_name'] ?? [];
         $errs  = $_FILES['files']['error'] ?? [];
+
+        // Cap files per request to prevent resource exhaustion (GD thumbnail
+        // creation is memory-intensive; 1000 files in one request = OOM).
+        if (count($names) > 20) {
+            wp_send_json_error(['message' => 'Too many files in one upload (max 20).']);
+        }
 
         foreach ($names as $i => $name) {
 
@@ -171,8 +191,16 @@ class GalleryController
                     'url'       => $url,
                     'thumbnail' => file_exists($thumb) ? $thumb_url : $url,
                     'size'      => @filesize($path) ?: 0,
-                ]
+                ],
+                $max_images
             );
+
+            if ($image_id === -1) {
+                // Atomic cap reached inside transaction — stop uploading further images.
+                @unlink($path);
+                @unlink($thumb);
+                break;
+            }
 
             if (!$image_id) {
                 continue;
@@ -525,11 +553,20 @@ class GalleryController
 
         imagecopyresampled($thumb, $img, 0, 0, 0, 0, $size, $size, $w, $h);
 
+        $ok = false;
         switch ($type) {
-            case IMAGETYPE_JPEG: imagejpeg($thumb, $dest, 85); break;
-            case IMAGETYPE_PNG:  imagepng($thumb, $dest, 9);   break;
-            case IMAGETYPE_GIF:  imagegif($thumb, $dest);      break;
-            case IMAGETYPE_WEBP: imagewebp($thumb, $dest, 85); break;
+            case IMAGETYPE_JPEG: $ok = imagejpeg($thumb, $dest, 85); break;
+            case IMAGETYPE_PNG:  $ok = imagepng($thumb, $dest, 9);   break;
+            case IMAGETYPE_GIF:  $ok = imagegif($thumb, $dest);      break;
+            case IMAGETYPE_WEBP: $ok = imagewebp($thumb, $dest, 85); break;
+        }
+
+        if (!$ok) {
+            if (class_exists(Logger::class)) {
+                Logger::error('[Gallery] Failed to write thumbnail', ['dest' => $dest, 'type' => $type]);
+            } else {
+                error_log('[Gallery] Failed to write thumbnail: ' . $dest);
+            }
         }
 
         imagedestroy($img);

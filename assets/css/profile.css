@@ -1351,13 +1351,11 @@ body.ps-dark-mode .bcc-dashboard-pill {
 .bcc-dashboard-tabs-inner {
   display: flex;
   flex-wrap: nowrap;
-  gap: 10px;
+  gap: 0;
   overflow-x: auto;
-  padding: 8px;
-  border: 1px solid var(--BCC--BORDER, #e2e8f0);
-  border-radius: calc(var(--BCC--RADIUS--LG, 16px) + 2px);
-  background: color-mix(in srgb, var(--BCC--SURFACE--RAISED, #fff) 88%, transparent);
-  box-shadow: var(--BCC--SHADOW--SM, 0 10px 30px rgba(15, 23, 42, 0.06));
+  padding: 0;
+  border-bottom: 1px solid var(--BCC--BORDER, #334155);
+  background: transparent;
   scrollbar-width: none;
 }
 
@@ -1370,30 +1368,31 @@ body.ps-dark-mode .bcc-dashboard-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 46px;
-  padding: 0 18px;
-  border: 1px solid transparent;
-  border-radius: 999px;
+  min-height: 44px;
+  padding: 0 20px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
-  color: var(--BCC--TEXT--SECONDARY, #64748b);
+  color: var(--COLOR--TEXT, var(--BCC--TEXT--SECONDARY, #94a3b8));
   font-size: 0.92rem;
-  font-weight: 700;
+  font-weight: 600;
   text-decoration: none;
-  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  transition: color 0.2s ease, border-color 0.2s ease;
 }
 
 .bcc-tab.ps-focus__menu-item:hover {
-  background: var(--BCC--SURFACE, #f8fafc);
-  color: var(--COLOR--HEADING);
-  transform: translateY(-1px);
+  background: transparent;
+  color: var(--COLOR--HEADING, #f1f5f9);
+  transform: none;
 }
 
 .bcc-tab.ps-focus__menu-item.active,
 .bcc-tab.ps-focus__menu-item.ps-focus__menu-item--active {
-  background: var(--COLOR--PRIMARY, #2563eb);
-  border-color: var(--COLOR--PRIMARY, #2563eb);
-  color: #fff;
-  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.24);
+  background: transparent;
+  border-bottom-color: var(--COLOR--PRIMARY, #3b82f6);
+  color: var(--COLOR--HEADING, #f1f5f9);
+  box-shadow: none;
 }
 
 .bcc-dashboard-content {
@@ -1672,13 +1671,13 @@ body.ps-dark-mode .bcc-dashboard-pill {
   }
 
   .bcc-dashboard-tabs-inner {
-    padding: 6px;
+    padding: 0;
   }
 
   .bcc-tab.ps-focus__menu-item {
-    min-height: 42px;
+    min-height: 40px;
     padding: 0 14px;
-    font-size: 0.88rem;
+    font-size: 0.85rem;
   }
 
   .bcc-row {

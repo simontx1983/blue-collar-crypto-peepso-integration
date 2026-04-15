@@ -1,4 +1,8 @@
 <?php
+// Guard: bail cleanly if PeepSo classes are unavailable (e.g. plugin deactivated).
+if (!class_exists('PeepSoPageUser') || !class_exists('PeepSoPageCategoriesPages')) {
+    return;
+}
 $PeepSoPageUser = new PeepSoPageUser($page->id);
 $PeepSoPage = $page;
 $coverUrl = $PeepSoPage->get_cover_url();

@@ -50,7 +50,7 @@ function bcc_render_trust_header_panel( int $page_id, string $mode ) {
         }
     }
 
-    include BCC_PLUGIN_PATH . 'templates/peepso/trust-header-panel.php';
+    include BCC_PEEPSO_PLUGIN_PATH . 'templates/peepso/trust-header-panel.php';
 }
 
 /* ──────────────────────────────────────────────────────────────────────

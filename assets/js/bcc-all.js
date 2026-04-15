@@ -719,8 +719,12 @@
                     $span.text(label);
                 } else {
                     if ($span.find("textarea").length || $span.data("type") === "wysiwyg") {
-                        // Server value is sanitized with wp_kses_post
-                        $span.html(serverVal || "");
+                        // Server value is sanitized with wp_kses_post on the PHP side.
+                        // Belt-and-suspenders: sanitize client-side too.
+                        var clean = typeof DOMPurify !== "undefined"
+                            ? DOMPurify.sanitize(serverVal || "")
+                            : $("<div>").text(serverVal || "").html();
+                        $span.html(clean);
                     } else {
                         $span.text(serverVal || "—");
                     }

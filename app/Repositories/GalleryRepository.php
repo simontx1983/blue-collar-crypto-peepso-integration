@@ -170,8 +170,39 @@ class GalleryRepository
         return $count;
     }
 
+    /**
+     * Count total images across ALL collections for a given post.
+     */
+    public static function count_images_for_post(int $post_id): int
+    {
+        global $wpdb;
+        $coll_table = self::collections_table();
+        $img_table  = self::images_table();
+
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$img_table} i
+             INNER JOIN {$coll_table} c ON i.collection_id = c.id
+             WHERE c.post_id = %d",
+            $post_id
+        ));
+    }
+
+    /**
+     * Count collections for a given post.
+     */
+    public static function count_collections(int $post_id): int
+    {
+        global $wpdb;
+        $table = self::collections_table();
+
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$table} WHERE post_id = %d",
+            $post_id
+        ));
+    }
+
     /** @param array<string, mixed> $data */
-    public static function insert_image(int $collection_id, array $data): int
+    public static function insert_image(int $collection_id, array $data, int $max_images = 0): int
     {
         global $wpdb;
         $table = self::images_table();
@@ -186,6 +217,21 @@ class GalleryRepository
                 $collection_id
             )
         );
+
+        // Atomic cap check inside the transaction — prevents race where two
+        // concurrent uploads both pass the controller-level count check.
+        if ($max_images > 0) {
+            $current_count = (int) $wpdb->get_var(
+                $wpdb->prepare(
+                    "SELECT COUNT(*) FROM $table WHERE collection_id = %d",
+                    $collection_id
+                )
+            );
+            if ($current_count >= $max_images) {
+                $wpdb->query('ROLLBACK');
+                return -1;
+            }
+        }
 
         $inserted = $wpdb->insert(
             $table,
@@ -481,15 +527,29 @@ class GalleryRepository
 
         $placeholders = implode(',', array_fill(0, count($collection_ids), '%d'));
 
+        $wpdb->query('START TRANSACTION');
+
         $wpdb->query($wpdb->prepare(
             "DELETE FROM {$img_table} WHERE collection_id IN ({$placeholders})",
             ...$collection_ids
         ));
 
+        if ($wpdb->last_error) {
+            $wpdb->query('ROLLBACK');
+            return;
+        }
+
         $wpdb->query($wpdb->prepare(
             "DELETE FROM {$coll_table} WHERE id IN ({$placeholders})",
             ...$collection_ids
         ));
+
+        if ($wpdb->last_error) {
+            $wpdb->query('ROLLBACK');
+            return;
+        }
+
+        $wpdb->query('COMMIT');
 
         foreach ($collection_ids as $cid) {
             self::invalidateCollectionCaches((int) $cid);

@@ -35,7 +35,7 @@ add_action('peepso_page_segment_dashboard', function ($args, $url) {
     // Pre-fetch category IDs for this page so the template has no DB queries.
     $category_ids = \BCC\PeepSo\Repositories\PeepSoPageRepository::getCategoryIdsForPage((int) $page->id);
 
-    $template = BCC_TEMPLATES_PATH . 'peepso/dashboard.php';
+    $template = BCC_PEEPSO_TEMPLATES_PATH . 'peepso/dashboard.php';
 
     if (file_exists($template)) {
         include $template;
