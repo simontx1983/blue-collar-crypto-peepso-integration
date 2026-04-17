@@ -69,8 +69,8 @@ $endorse_tip  = $perms['endorse_reason'] ?? '';
 $upvote_active_tip   = 'Vote that this project is trustworthy. Your vote raises its Trust Score, which helps the community identify reliable projects.';
 $downvote_active_tip = 'Vote that this project has trust concerns. Your vote lowers its Trust Score, warning the community about potential risks.';
 $endorse_active_tip  = 'Stake your reputation on this project. Endorsements carry more weight than votes because your name is attached.';
-$flag_active_tip     = 'Alert the community that something looks suspicious. Flags are visible to other users but do not change the Trust Score.';
-$report_active_tip   = 'Confidentially report this user to admins for investigation. Reports are private and reviewed by the moderation team.';
+$flag_active_tip     = 'Publicly flag this page as suspicious. Other users can see the flag count. Does not affect the Trust Score.';
+$report_active_tip   = 'Privately report this user to the moderation team. Your report is confidential and will be reviewed by admins.';
 
 // Login gate attribute for interactive buttons
 $login_gate = ! $logged_in ? ' data-requires-login="1" disabled' : '';
@@ -204,10 +204,10 @@ $system_degraded = !empty( $data['system_degraded'] );
                     data-action="<?php echo esc_attr( $viewer_flagged ? 'unflag' : 'flag' ); ?>"
                     data-tooltip="<?php echo esc_attr( $flag_active_tip ); ?>"
                     aria-pressed="<?php echo esc_attr( $viewer_flagged ? 'true' : 'false' ); ?>"
-                    aria-label="<?php echo esc_attr( $viewer_flagged ? 'Remove flag' : 'Flag this page' ); ?>"
+                    aria-label="<?php echo esc_attr( $viewer_flagged ? 'Remove public flag' : 'Publicly flag this page' ); ?>"
                     <?php echo $login_gate; ?>>
                 <span aria-hidden="true">&#9873;</span>
-                <span class="bcc-trust-header__flag-label"><?php echo esc_html( $viewer_flagged ? 'Flagged' : 'Flag' ); ?></span>
+                <span class="bcc-trust-header__flag-label"><?php echo esc_html( $viewer_flagged ? 'Flagged' : 'Flag Page' ); ?></span>
                 <?php if ( $flag_count > 0 ) : ?>
                     <span class="bcc-trust-header__flag-count"><?php echo esc_html( $flag_count ); ?></span>
                 <?php endif; ?>
@@ -217,11 +217,11 @@ $system_degraded = !empty( $data['system_degraded'] );
                 <button type="button"
                         class="bcc-trust-header__report-btn"
                         data-tooltip="<?php echo esc_attr( $report_active_tip ); ?>"
-                        aria-label="Report this user"
+                        aria-label="Privately report this user to moderators"
                         data-reported-user-id="<?php echo esc_attr( $page_owner_id ); ?>"
                         <?php echo $login_gate; ?>>
                     <span aria-hidden="true">&#9888;</span>
-                    <span>Report</span>
+                    <span>Report User</span>
                 </button>
             <?php endif; ?>
         </div>

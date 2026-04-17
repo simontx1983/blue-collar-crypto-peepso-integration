@@ -156,6 +156,92 @@ add_action('before_delete_post', function ($post_id) {
 
 }, 10);
 
+/* ----------------------------------------------------
+   Daily Reconciliation Cron
+   Detects pages where shadow CPTs are missing or have
+   drifted titles, and auto-repairs them using the same
+   logic as the manual repair tool.
+---------------------------------------------------- */
+
+add_action('init', function () {
+    if (!wp_next_scheduled('bcc_shadow_cpt_reconcile')) {
+        wp_schedule_event(time() + HOUR_IN_SECONDS, 'daily', 'bcc_shadow_cpt_reconcile');
+    }
+});
+
+add_action('bcc_shadow_cpt_reconcile', function () {
+    if (!function_exists('bcc_get_category_map')) {
+        return;
+    }
+    if (!class_exists('\\BCC\\PeepSo\\Repositories\\PeepSoPageRepository')) {
+        return;
+    }
+    if (!\BCC\PeepSo\Repositories\PeepSoPageRepository::tableExists()) {
+        return;
+    }
+
+    $map = bcc_get_category_map();
+    if (empty($map)) {
+        return;
+    }
+
+    // Process in batches to avoid memory issues on large sites.
+    $offset  = 0;
+    $batch   = 50;
+    $repaired = 0;
+
+    do {
+        $pages = get_posts([
+            'post_type'      => 'peepso-page',
+            'posts_per_page' => $batch,
+            'offset'         => $offset,
+            'post_status'    => 'publish',
+            'no_found_rows'  => true,
+            'orderby'        => 'ID',
+            'order'          => 'ASC',
+        ]);
+
+        foreach ($pages as $page) {
+            $cat_ids = \BCC\PeepSo\Repositories\PeepSoPageRepository::getCategoryIdsForPage((int) $page->ID);
+            if (empty($cat_ids)) {
+                continue;
+            }
+
+            foreach ($cat_ids as $cat_id) {
+                if (!isset($map[(int) $cat_id]['cpt'])) {
+                    continue;
+                }
+
+                $cpt      = $map[(int) $cat_id]['cpt'];
+                $existing = get_post_meta($page->ID, '_linked_' . $cpt . '_id', true);
+
+                // Check: shadow exists and title matches?
+                if ($existing) {
+                    $shadow = get_post($existing);
+                    if ($shadow && $shadow->post_title === $page->post_title) {
+                        continue; // All good — skip
+                    }
+                }
+
+                // Drift detected — repair this page
+                if (function_exists('bcc_repair_engine')) {
+                    bcc_repair_engine($page->ID);
+                    $repaired++;
+                }
+                break; // One repair per page is enough (repair_engine handles all CPTs)
+            }
+        }
+
+        $offset += $batch;
+    } while (count($pages) === $batch);
+
+    if ($repaired > 0 && class_exists('\\BCC\\Core\\Log\\Logger')) {
+        \BCC\Core\Log\Logger::info('[bcc-peepso] Shadow CPT reconciliation', [
+            'repaired' => $repaired,
+        ]);
+    }
+});
+
 /**
  * Remove gallery collections and their images for a given post.
  * Prevents orphaned rows when shadow CPTs are trashed/deleted.
