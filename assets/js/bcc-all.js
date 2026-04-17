@@ -766,7 +766,8 @@
         window.bccVisContext = {
             post: $pill.data("post"),
             field: $pill.data("field"),
-            button: $pill
+            button: $pill,
+            version: $pill.data("vis-version") || null
         };
 
         const $pop = $("#bcc-visibility-popover");
@@ -808,13 +809,18 @@
         const $pill = window.bccVisContext.button;
         $pill.addClass("bcc-loading");
 
-        $.post(bcc_ajax.ajax_url, {
+        var postData = {
             action: "bcc_save_field_visibility",
             nonce: bcc_ajax.nonce,
             post_id: window.bccVisContext.post,
             field: window.bccVisContext.field,
             visibility: value
-        })
+        };
+        if (window.bccVisContext.version !== null && window.bccVisContext.version !== undefined) {
+            postData.vis_version = window.bccVisContext.version;
+        }
+
+        $.post(bcc_ajax.ajax_url, postData)
         .done(function (res) {
             if (!res || res.success !== true) {
                 window.bccToast(res?.data?.message || "Save failed", "error");
@@ -831,7 +837,8 @@
                 .text(labels[value])
                 .removeClass("public members private")
                 .addClass(value)
-                .data("current", value);
+                .data("current", value)
+                .data("vis-version", res.data.vis_version);
 
             window.bccToast("Visibility updated");
         })

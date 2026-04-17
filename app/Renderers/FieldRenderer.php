@@ -296,10 +296,15 @@ class FieldRenderer
 
         $label = $labels[$vis] ?? $labels['public'];
 
+        $visVersion = function_exists('bcc_get_visibility_version')
+            ? bcc_get_visibility_version($this->post_id)
+            : 0;
+
         echo '<button class="bcc-visibility-pill ' . esc_attr($vis) . '" ';
         echo 'data-post="' . esc_attr((string) $this->post_id) . '" ';
         echo 'data-field="' . esc_attr($this->field) . '" ';
-        echo 'data-current="' . esc_attr($vis) . '">';
+        echo 'data-current="' . esc_attr($vis) . '" ';
+        echo 'data-vis-version="' . esc_attr((string) $visVersion) . '">';
         echo esc_html($label);
         echo '</button>';
     }

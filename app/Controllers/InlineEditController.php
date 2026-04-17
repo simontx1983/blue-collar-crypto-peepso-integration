@@ -9,6 +9,7 @@ if (!defined('ABSPATH')) {
 use BCC\PeepSo\Domain\AbstractPageType;
 use BCC\PeepSo\Security\AjaxSecurity;
 use BCC\Core\Security\Throttle;
+use BCC\Core\Log\Logger;
 
 /**
  * AJAX – Inline Field Save Controller (Domain Aware)
@@ -23,6 +24,26 @@ class InlineEditController
     private static function getDomainClass(int $post_id): string
     {
         return AbstractPageType::get_domain_for_post($post_id) ?? '';
+    }
+
+    private static function auditEdit(int $post_id, string $field, string $action, $newValue, ?string $sub = null): void
+    {
+        if (!class_exists(Logger::class)) {
+            return;
+        }
+        $ctx = [
+            'user_id' => get_current_user_id(),
+            'post_id' => $post_id,
+            'field'   => $field,
+            'action'  => $action,
+        ];
+        if ($sub !== null) {
+            $ctx['sub'] = $sub;
+        }
+        if (is_scalar($newValue)) {
+            $ctx['value'] = mb_substr((string) $newValue, 0, 200);
+        }
+        Logger::audit('inline_edit', $ctx);
     }
 
     public static function handle(): void
@@ -90,6 +111,7 @@ class InlineEditController
                 $rows = [];
             }
             $rows[] = [];
+            self::auditEdit($post_id, $field, 'repeater_add', count($rows));
             update_field($field, $rows, $post_id);
             wp_send_json_success([
                 'message' => 'New item added',
@@ -106,6 +128,7 @@ class InlineEditController
         }
 
         if (!$repeater) {
+            self::auditEdit($post_id, $field, 'update', $value);
             update_field($field, $value, $post_id);
             wp_send_json_success([
                 'value' => $value
@@ -125,6 +148,7 @@ class InlineEditController
         }
 
         $rows[$row][$sub] = $value;
+        self::auditEdit($post_id, $field, 'repeater_update', $value, $sub);
         update_field($field, $rows, $post_id);
 
         wp_send_json_success([

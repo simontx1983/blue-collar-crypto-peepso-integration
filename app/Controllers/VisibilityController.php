@@ -65,6 +65,20 @@ class VisibilityController
             ]);
         }
 
+        // Optimistic locking: reject if another save bumped the version
+        // since this client last read the post.
+        $clientVersion = isset($_POST['vis_version']) ? (int) $_POST['vis_version'] : null;
+        if ($clientVersion !== null && function_exists('bcc_get_visibility_version')) {
+            $serverVersion = bcc_get_visibility_version($post_id);
+            if ($clientVersion !== $serverVersion) {
+                wp_send_json_error([
+                    'message'     => 'Someone else changed visibility. Please refresh and try again.',
+                    'vis_version' => $serverVersion,
+                    'conflict'    => true,
+                ], 409);
+            }
+        }
+
         $saved = bcc_set_field_visibility($post_id, $field, $visibility);
 
         if (!$saved) {
@@ -73,11 +87,17 @@ class VisibilityController
             ]);
         }
 
+        // Return the new version so the client can send it on the next save.
+        $newVersion = function_exists('bcc_get_visibility_version')
+            ? bcc_get_visibility_version($post_id)
+            : 0;
+
         wp_send_json_success([
-            'message'    => 'Visibility updated',
-            'post_id'    => $post_id,
-            'field'      => $field,
-            'visibility' => $visibility
+            'message'     => 'Visibility updated',
+            'post_id'     => $post_id,
+            'field'       => $field,
+            'visibility'  => $visibility,
+            'vis_version' => $newVersion,
         ]);
     }
 }

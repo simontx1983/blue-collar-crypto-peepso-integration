@@ -10,34 +10,15 @@ define('BCC_PEEPSO_BOOTSTRAP_LOADED', true);
    CATEGORY → CPT MAP (single source of truth)
 ====================================================== */
 
-if (!function_exists('bcc_get_category_map')) {
+if (!function_exists('bcc_get_slug_to_cpt_map')) {
     /**
-     * Maps PeepSo page category IDs to shadow CPT slugs.
-     * Used by: sync engine, repair tool, dashboard tabs.
+     * Canonical slug → CPT definition.  Filterable so themes/other plugins
+     * can extend. Used by bcc_get_category_map() and bcc_category_map_is_fresh().
      *
-     * Filterable so themes/other plugins can extend.
+     * @return array<string, array{cpt: string, label: string}>
      */
-    function bcc_get_category_map(): array {
-        // Resolve category IDs from slugs at runtime so the map is
-        // portable across environments (dev / staging / production).
-        // Results are cached in persistent object cache (cross-request)
-        // and in a static variable (within-request dedup).
-        static $resolved = null;
-        if ($resolved !== null) {
-            return $resolved;
-        }
-
-        $cache_key   = 'bcc_category_map';
-        $cache_group = 'bcc_peepso';
-        $cache_ttl   = 3600; // 1 hour — invalidated on category save
-
-        $cached = wp_cache_get($cache_key, $cache_group);
-        if (is_array($cached)) {
-            $resolved = $cached;
-            return $resolved;
-        }
-
-        $slug_to_cpt = apply_filters('bcc_category_slug_map', [
+    function bcc_get_slug_to_cpt_map(): array {
+        return apply_filters('bcc_category_slug_map', [
             'validators'   => ['cpt' => 'validators', 'label' => 'Validators'],
             'vaildators'   => ['cpt' => 'validators', 'label' => 'Validators'], // typo in DB
             'builder'      => ['cpt' => 'builder',    'label' => 'Builder'],
@@ -48,8 +29,18 @@ if (!function_exists('bcc_get_category_map')) {
             'dao'          => ['cpt' => 'dao',        'label' => 'DAO'],
             'daos'         => ['cpt' => 'dao',        'label' => 'DAO'],
         ]);
+    }
+}
 
-        $map = [];
+if (!function_exists('bcc_resolve_category_map_from_db')) {
+    /**
+     * Build the category ID → CPT map from the database (bypasses cache).
+     *
+     * @return array<int, array{cpt: string, label: string}>
+     */
+    function bcc_resolve_category_map_from_db(): array {
+        $slug_to_cpt = bcc_get_slug_to_cpt_map();
+
         $cats = get_posts([
             'post_type'      => 'peepso-page-cat',
             'post_status'    => 'publish',
@@ -57,6 +48,7 @@ if (!function_exists('bcc_get_category_map')) {
             'fields'         => 'all',
         ]);
 
+        $map = [];
         foreach ($cats as $cat) {
             $slug = $cat->post_name;
             if (isset($slug_to_cpt[$slug])) {
@@ -64,11 +56,36 @@ if (!function_exists('bcc_get_category_map')) {
             }
         }
 
-        $resolved = apply_filters('bcc_category_map', $map);
+        return apply_filters('bcc_category_map', $map);
+    }
+}
+
+if (!function_exists('bcc_get_category_map')) {
+    /**
+     * Maps PeepSo page category IDs to shadow CPT slugs.
+     * Used by: sync engine, repair tool, dashboard tabs.
+     *
+     * Filterable so themes/other plugins can extend.
+     */
+    function bcc_get_category_map(): array {
+        static $resolved = null;
+        if ($resolved !== null) {
+            return $resolved;
+        }
+
+        $cache_key   = 'bcc_category_map';
+        $cache_group = 'bcc_peepso';
+        $cache_ttl   = 3600;
+
+        $cached = wp_cache_get($cache_key, $cache_group);
+        if (is_array($cached)) {
+            $resolved = $cached;
+            return $resolved;
+        }
+
+        $resolved = bcc_resolve_category_map_from_db();
         wp_cache_set($cache_key, $resolved, $cache_group, $cache_ttl);
 
-        // Store a checksum so drift detection can compare cache vs DB
-        // without rebuilding the full map every time.
         $checksum = md5(serialize($resolved));
         wp_cache_set('bcc_category_map_checksum', $checksum, $cache_group, $cache_ttl);
 
@@ -87,41 +104,13 @@ if (!function_exists('bcc_category_map_is_fresh')) {
         $cache_group = 'bcc_peepso';
         $cachedChecksum = wp_cache_get('bcc_category_map_checksum', $cache_group);
         if ($cachedChecksum === false) {
-            return false; // No cache — will be rebuilt on next call
+            return false;
         }
 
-        // Rebuild the map from DB (bypass cache) and compare checksums.
-        $cats = get_posts([
-            'post_type'      => 'peepso-page-cat',
-            'post_status'    => 'publish',
-            'posts_per_page' => 100,
-            'fields'         => 'all',
-        ]);
-
-        $slug_to_cpt = apply_filters('bcc_category_slug_map', [
-            'validators'   => ['cpt' => 'validators', 'label' => 'Validators'],
-            'vaildators'   => ['cpt' => 'validators', 'label' => 'Validators'],
-            'builder'      => ['cpt' => 'builder',    'label' => 'Builder'],
-            'builders'     => ['cpt' => 'builder',    'label' => 'Builder'],
-            'nft'          => ['cpt' => 'nft',        'label' => 'NFT'],
-            'nft-creators' => ['cpt' => 'nft',        'label' => 'NFT'],
-            'nft-creator'  => ['cpt' => 'nft',        'label' => 'NFT'],
-            'dao'          => ['cpt' => 'dao',        'label' => 'DAO'],
-            'daos'         => ['cpt' => 'dao',        'label' => 'DAO'],
-        ]);
-
-        $map = [];
-        foreach ($cats as $cat) {
-            $slug = $cat->post_name;
-            if (isset($slug_to_cpt[$slug])) {
-                $map[$cat->ID] = $slug_to_cpt[$slug];
-            }
-        }
-        $freshMap = apply_filters('bcc_category_map', $map);
+        $freshMap      = bcc_resolve_category_map_from_db();
         $freshChecksum = md5(serialize($freshMap));
 
         if ($cachedChecksum !== $freshChecksum) {
-            // Drift detected — auto-repair by busting the cache.
             wp_cache_delete('bcc_category_map', $cache_group);
             wp_cache_delete('bcc_category_map_checksum', $cache_group);
 

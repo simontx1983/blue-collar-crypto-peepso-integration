@@ -124,12 +124,39 @@ function bcc_set_field_visibility($post_id, $field, $visibility) {
 
     $result = update_post_meta($post_id, $meta_key, $visibility);
 
+    if ($result) {
+        // Bump the visibility version counter for optimistic locking.
+        // Concurrent saves that read the same version will detect the
+        // conflict via bcc_check_visibility_version().
+        $ver_key = '_bcc_vis_version';
+        $old_ver = (int) get_post_meta($post_id, $ver_key, true);
+        update_post_meta($post_id, $ver_key, $old_ver + 1);
+    }
+
     // Clear cache if we're using caching
     if (function_exists('bcc_clear_visibility_cache')) {
         bcc_clear_visibility_cache($post_id, $field);
     }
 
     return (bool) $result;
+}
+
+}
+
+/* ======================================================
+   VISIBILITY VERSION (optimistic locking)
+====================================================== */
+
+if (!function_exists('bcc_get_visibility_version')) {
+
+/**
+ * Return the current visibility version counter for a post.
+ *
+ * Callers pass this value back on save; the controller rejects stale versions.
+ */
+function bcc_get_visibility_version(int $post_id): int
+{
+    return (int) get_post_meta($post_id, '_bcc_vis_version', true);
 }
 
 }
