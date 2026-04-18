@@ -225,7 +225,7 @@ add_action('bcc_shadow_cpt_reconcile', function () {
 
                 // Drift detected — repair this page
                 if (function_exists('bcc_repair_engine')) {
-                    bcc_repair_engine($page->ID);
+                    bcc_repair_engine($page->ID, true);
                     $repaired++;
                 }
                 break; // One repair per page is enough (repair_engine handles all CPTs)

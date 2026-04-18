@@ -8,9 +8,9 @@ if (!defined('ABSPATH')) exit;
 
 if (!function_exists('bcc_repair_engine')) {
 
-function bcc_repair_engine($page_id = null) {
+function bcc_repair_engine($page_id = null, bool $is_cron = false) {
 
-    if (!current_user_can('manage_options')) {
+    if (!$is_cron && !current_user_can('manage_options')) {
         return ['error' => 'Permission denied'];
     }
 

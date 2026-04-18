@@ -125,12 +125,17 @@ function bcc_set_field_visibility($post_id, $field, $visibility) {
     $result = update_post_meta($post_id, $meta_key, $visibility);
 
     if ($result) {
-        // Bump the visibility version counter for optimistic locking.
-        // Concurrent saves that read the same version will detect the
-        // conflict via bcc_check_visibility_version().
-        $ver_key = '_bcc_vis_version';
-        $old_ver = (int) get_post_meta($post_id, $ver_key, true);
-        update_post_meta($post_id, $ver_key, $old_ver + 1);
+        // Bump the visibility version counter atomically for optimistic locking.
+        // Uses a single SQL UPDATE to avoid read-increment-write race conditions
+        // where concurrent saves could both read the same version.
+        global $wpdb;
+        $updated = $wpdb->query($wpdb->prepare(
+            "UPDATE {$wpdb->postmeta} SET meta_value = meta_value + 1 WHERE post_id = %d AND meta_key = '_bcc_vis_version'",
+            $post_id
+        ));
+        if (!$updated) {
+            add_post_meta($post_id, '_bcc_vis_version', 1, true);
+        }
     }
 
     // Clear cache if we're using caching

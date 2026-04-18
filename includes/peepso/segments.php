@@ -32,6 +32,12 @@ add_action('peepso_page_segment_dashboard', function ($args, $url) {
 
     $page = $args['page'];
 
+    // Validate that the page is a published peepso-page before rendering.
+    $post = get_post((int) $page->id);
+    if (!$post || $post->post_status !== 'publish' || $post->post_type !== 'peepso-page') {
+        return;
+    }
+
     // Pre-fetch category IDs for this page so the template has no DB queries.
     $category_ids = \BCC\PeepSo\Repositories\PeepSoPageRepository::getCategoryIdsForPage((int) $page->id);
 

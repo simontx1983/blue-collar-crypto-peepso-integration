@@ -69,7 +69,11 @@ if (!function_exists('bcc_get_category_map')) {
      */
     function bcc_get_category_map(): array {
         static $resolved = null;
-        if ($resolved !== null) {
+        static $generation = 0;
+
+        // Check if cache was invalidated since last static resolution.
+        $current_gen = (int) wp_cache_get('bcc_category_map_gen', 'bcc_peepso');
+        if ($resolved !== null && $generation === $current_gen) {
             return $resolved;
         }
 
@@ -84,6 +88,7 @@ if (!function_exists('bcc_get_category_map')) {
         }
 
         $resolved = bcc_resolve_category_map_from_db();
+        $generation = $current_gen;
         wp_cache_set($cache_key, $resolved, $cache_group, $cache_ttl);
 
         $checksum = md5(serialize($resolved));
@@ -113,6 +118,10 @@ if (!function_exists('bcc_category_map_is_fresh')) {
         if ($cachedChecksum !== $freshChecksum) {
             wp_cache_delete('bcc_category_map', $cache_group);
             wp_cache_delete('bcc_category_map_checksum', $cache_group);
+            // Bump generation so the static $resolved cache is invalidated
+            // for any same-request callers.
+            wp_cache_incr('bcc_category_map_gen', 1, $cache_group)
+                || wp_cache_set('bcc_category_map_gen', 1, $cache_group, 0);
 
             if (class_exists('\\BCC\\Core\\Log\\Logger')) {
                 \BCC\Core\Log\Logger::warning('[bcc-peepso] Category map cache drift detected and auto-repaired', [
