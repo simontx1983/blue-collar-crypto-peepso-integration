@@ -21,9 +21,6 @@ final class PeepSoPageRepository
     private const PAGE_COL = 'pm_page_id';
     private const CAT_COL  = 'pm_cat_id';
 
-    /** Columns queried from the PeepSo page-categories relation table. */
-    private const COLUMNS = 'pm_page_id, pm_cat_id';
-
     /**
      * Check if the PeepSo page-categories relation table exists.
      * Result is cached per-process.

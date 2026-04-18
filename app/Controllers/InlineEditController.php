@@ -26,7 +26,7 @@ class InlineEditController
         return AbstractPageType::get_domain_for_post($post_id) ?? '';
     }
 
-    private static function auditEdit(int $post_id, string $field, string $action, $newValue, ?string $sub = null): void
+    private static function auditEdit(int $post_id, string $field, string $action, mixed $newValue, ?string $sub = null): void
     {
         if (!class_exists(Logger::class)) {
             return;
@@ -95,12 +95,12 @@ class InlineEditController
             wp_send_json_error('Unsupported post type');
         }
 
-        if (!method_exists($domain, 'is_valid_field') || !call_user_func([$domain, 'is_valid_field'], $field)) {
+        if (!method_exists($domain, 'is_valid_field') || !$domain::is_valid_field($field)) {
             wp_send_json_error('Invalid field');
         }
 
         if ($repeater && $sub && $sub !== 'add_new') {
-            if (!method_exists($domain, 'is_valid_subfield') || !call_user_func([$domain, 'is_valid_subfield'], $field, $sub)) {
+            if (!method_exists($domain, 'is_valid_subfield') || !$domain::is_valid_subfield($field, $sub)) {
                 wp_send_json_error('Invalid sub field');
             }
         }

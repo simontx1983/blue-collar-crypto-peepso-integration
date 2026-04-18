@@ -29,6 +29,25 @@ class GalleryRepository
         wp_cache_delete("img_count_{$collection_id}", self::CACHE_GROUP);
         wp_cache_incr("img_gen_{$collection_id}", 1, self::CACHE_GROUP)
             || wp_cache_set("img_gen_{$collection_id}", 1, self::CACHE_GROUP, 0);
+
+        // Also invalidate post-level aggregate caches.
+        global $wpdb;
+        $post_id = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT post_id FROM " . self::collections_table() . " WHERE id = %d LIMIT 1",
+            $collection_id
+        ));
+        if ($post_id) {
+            self::invalidatePostCaches($post_id);
+        }
+    }
+
+    /**
+     * Invalidate post-level aggregate caches (image count, collection count).
+     */
+    private static function invalidatePostCaches(int $post_id): void
+    {
+        wp_cache_delete("post_img_count_{$post_id}", self::CACHE_GROUP);
+        wp_cache_delete("coll_count_{$post_id}", self::CACHE_GROUP);
     }
 
     private static function imgCacheKey(int $collection_id, int $page, int $per_page): string
@@ -140,6 +159,7 @@ class GalleryRepository
         $wpdb->query('COMMIT');
 
         wp_cache_delete("coll_{$post_id}_{$sort_order}", self::CACHE_GROUP);
+        self::invalidatePostCaches($post_id);
 
         return $row;
     }
@@ -175,16 +195,24 @@ class GalleryRepository
      */
     public static function count_images_for_post(int $post_id): int
     {
+        $cache_key = "post_img_count_{$post_id}";
+        $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
+        if ($cached !== false) {
+            return (int) $cached;
+        }
+
         global $wpdb;
         $coll_table = self::collections_table();
-        $img_table  = self::images_table();
 
-        return (int) $wpdb->get_var($wpdb->prepare(
-            "SELECT COUNT(*) FROM {$img_table} i
-             INNER JOIN {$coll_table} c ON i.collection_id = c.id
-             WHERE c.post_id = %d",
+        // Use SUM(image_count) from the collections table instead of a
+        // JOIN, since image_count is already maintained on each collection.
+        $count = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COALESCE(SUM(image_count), 0) FROM {$coll_table} WHERE post_id = %d",
             $post_id
         ));
+
+        wp_cache_set($cache_key, $count, self::CACHE_GROUP, self::CACHE_TTL);
+        return $count;
     }
 
     /**
@@ -192,13 +220,22 @@ class GalleryRepository
      */
     public static function count_collections(int $post_id): int
     {
+        $cache_key = "coll_count_{$post_id}";
+        $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
+        if ($cached !== false) {
+            return (int) $cached;
+        }
+
         global $wpdb;
         $table = self::collections_table();
 
-        return (int) $wpdb->get_var($wpdb->prepare(
+        $count = (int) $wpdb->get_var($wpdb->prepare(
             "SELECT COUNT(*) FROM {$table} WHERE post_id = %d",
             $post_id
         ));
+
+        wp_cache_set($cache_key, $count, self::CACHE_GROUP, self::CACHE_TTL);
+        return $count;
     }
 
     /** @param array<string, mixed> $data */
@@ -544,7 +581,7 @@ class GalleryRepository
             ...$collection_ids
         ));
 
-        if ($wpdb->last_error) {
+        if ($wpdb->last_error !== '') {
             $wpdb->query('ROLLBACK');
             return;
         }
@@ -554,5 +591,6 @@ class GalleryRepository
         foreach ($collection_ids as $cid) {
             self::invalidateCollectionCaches((int) $cid);
         }
+        self::invalidatePostCaches($post_id);
     }
 }
