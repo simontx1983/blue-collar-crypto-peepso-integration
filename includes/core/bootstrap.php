@@ -150,10 +150,12 @@ require_once BCC_PEEPSO_INCLUDES_PATH . 'core/permissions.php';
 // Domain types loaded via Composer PSR-4 autoload (app/Domain/)
 
 /* ======================================================
-   SYNC
+   SERVICES (shadow CPT sync, integrity, repair)
 ====================================================== */
 
-require_once BCC_PEEPSO_INCLUDES_PATH . 'sync/page-to-cpt-sync.php';
+\BCC\PeepSo\Services\ShadowPageSyncService::register();
+\BCC\PeepSo\Services\PageIntegrityService::register();
+\BCC\PeepSo\Services\PageRepairService::register();
 
 /* ======================================================
    AJAX CONTROLLERS
@@ -173,9 +175,6 @@ require_once BCC_PEEPSO_INCLUDES_PATH . 'renderers/template-functions.php';
 /* ======================================================
    HELPERS
 ====================================================== */
-require_once BCC_PEEPSO_INCLUDES_PATH . 'helpers/sync-repair.php';
-
-require_once BCC_PEEPSO_INCLUDES_PATH . 'helpers/data-integrity.php';
 require_once BCC_PEEPSO_INCLUDES_PATH . 'helpers/page-context.php';
 
 require_once BCC_PEEPSO_INCLUDES_PATH . 'peepso/segments.php';

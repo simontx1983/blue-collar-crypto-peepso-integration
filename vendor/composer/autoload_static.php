@@ -6,7 +6,15 @@ namespace Composer\Autoload;
 
 class ComposerStaticInit919a6277838ba16141192ac1ae0f7f55
 {
+    public static $files = array (
+        '9b38cf48e83f5d8f60375221cd213eee' => __DIR__ . '/..' . '/phpstan/phpstan/bootstrap.php',
+    );
+
     public static $prefixLengthsPsr4 = array (
+        'S' =>
+        array (
+            'SzepeViktor\\PHPStan\\WordPress\\' => 30,
+        ),
         'B' =>
         array (
             'BCC\\PeepSo\\' => 11,
@@ -14,6 +22,10 @@ class ComposerStaticInit919a6277838ba16141192ac1ae0f7f55
     );
 
     public static $prefixDirsPsr4 = array (
+        'SzepeViktor\\PHPStan\\WordPress\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src',
+        ),
         'BCC\\PeepSo\\' =>
         array (
             0 => __DIR__ . '/../..' . '/app',
@@ -34,9 +46,28 @@ class ComposerStaticInit919a6277838ba16141192ac1ae0f7f55
         'BCC\\PeepSo\\Renderers\\GalleryRenderer' => __DIR__ . '/../..' . '/app/Renderers/GalleryRenderer.php',
         'BCC\\PeepSo\\Renderers\\RepeaterRenderer' => __DIR__ . '/../..' . '/app/Renderers/RepeaterRenderer.php',
         'BCC\\PeepSo\\Repositories\\GalleryRepository' => __DIR__ . '/../..' . '/app/Repositories/GalleryRepository.php',
+        'BCC\\PeepSo\\Repositories\\LockRepository' => __DIR__ . '/../..' . '/app/Repositories/LockRepository.php',
         'BCC\\PeepSo\\Repositories\\PeepSoPageRepository' => __DIR__ . '/../..' . '/app/Repositories/PeepSoPageRepository.php',
         'BCC\\PeepSo\\Security\\AjaxSecurity' => __DIR__ . '/../..' . '/app/Security/AjaxSecurity.php',
+        'BCC\\PeepSo\\Services\\PageIntegrityService' => __DIR__ . '/../..' . '/app/Services/PageIntegrityService.php',
+        'BCC\\PeepSo\\Services\\PageRepairService' => __DIR__ . '/../..' . '/app/Services/PageRepairService.php',
+        'BCC\\PeepSo\\Services\\ShadowPageSyncService' => __DIR__ . '/../..' . '/app/Services/ShadowPageSyncService.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
+        'SzepeViktor\\PHPStan\\WordPress\\ApplyFiltersDynamicFunctionReturnTypeExtension' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/ApplyFiltersDynamicFunctionReturnTypeExtension.php',
+        'SzepeViktor\\PHPStan\\WordPress\\AssertWpErrorTypeSpecifyingExtension' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/AssertWpErrorTypeSpecifyingExtension.php',
+        'SzepeViktor\\PHPStan\\WordPress\\EscSqlDynamicFunctionReturnTypeExtension' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/EscSqlDynamicFunctionReturnTypeExtension.php',
+        'SzepeViktor\\PHPStan\\WordPress\\HookCallbackRule' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/HookCallbackRule.php',
+        'SzepeViktor\\PHPStan\\WordPress\\HookDocBlock' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/HookDocBlock.php',
+        'SzepeViktor\\PHPStan\\WordPress\\HookDocsRule' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/HookDocsRule.php',
+        'SzepeViktor\\PHPStan\\WordPress\\HookDocsVisitor' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/HookDocsVisitor.php',
+        'SzepeViktor\\PHPStan\\WordPress\\NormalizeWhitespaceDynamicFunctionReturnTypeExtension' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/NormalizeWhitespaceDynamicFunctionReturnTypeExtension.php',
+        'SzepeViktor\\PHPStan\\WordPress\\NormalizedArguments' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/NormalizedArguments.php',
+        'SzepeViktor\\PHPStan\\WordPress\\ShortcodeAttsDynamicFunctionReturnTypeExtension' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/ShortcodeAttsDynamicFunctionReturnTypeExtension.php',
+        'SzepeViktor\\PHPStan\\WordPress\\SlashitFunctionsDynamicFunctionReturnTypeExtension' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/SlashitFunctionsDynamicFunctionReturnTypeExtension.php',
+        'SzepeViktor\\PHPStan\\WordPress\\StripslashesFromStringsOnlyDynamicFunctionReturnTypeExtension' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/StripslashesFromStringsOnlyDynamicFunctionReturnTypeExtension.php',
+        'SzepeViktor\\PHPStan\\WordPress\\WpConstantFetchRule' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/WpConstantFetchRule.php',
+        'SzepeViktor\\PHPStan\\WordPress\\WpParseUrlFunctionDynamicReturnTypeExtension' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/WpParseUrlFunctionDynamicReturnTypeExtension.php',
+        'SzepeViktor\\PHPStan\\WordPress\\WpSlashDynamicFunctionReturnTypeExtension' => __DIR__ . '/..' . '/szepeviktor/phpstan-wordpress/src/WpSlashDynamicFunctionReturnTypeExtension.php',
     );
 
     public static function getInitializer(ClassLoader $loader)

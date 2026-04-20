@@ -108,4 +108,27 @@ final class PeepSoPageRepository
         ));
     }
 
+    /**
+     * Get all page IDs assigned to a given category.
+     *
+     * @param int $categoryId PeepSo category post ID.
+     * @return int[]
+     */
+    public static function getPageIdsByCategory(int $categoryId): array
+    {
+        if (!self::tableExists()) {
+            return [];
+        }
+
+        global $wpdb;
+        $table = self::tableName();
+
+        $rows = $wpdb->get_col($wpdb->prepare(
+            "SELECT " . self::PAGE_COL . " FROM {$table} WHERE " . self::CAT_COL . " = %d",
+            $categoryId
+        ));
+
+        return array_map('intval', (array) $rows);
+    }
+
 }
