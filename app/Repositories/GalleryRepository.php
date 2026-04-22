@@ -8,9 +8,107 @@ if (!defined('ABSPATH')) {
 
 /**
  * Gallery Repository (DB Layer)
+ *
+ * Rows returned by $wpdb are reshaped into typed stdClass objects via
+ * the hydrate helpers below. Callers receive pre-cast scalar properties
+ * (int where numeric, string otherwise) — no raw wpdb strings escape
+ * this class.
+ *
+ * @phpstan-type CollectionRow object{
+ *     id: int,
+ *     post_id: int,
+ *     user_id: int,
+ *     name: string,
+ *     sort_order: int,
+ *     image_count: int,
+ *     created_at: string
+ * }
+ * @phpstan-type ImageRow object{
+ *     id: int,
+ *     collection_id: int,
+ *     file: string,
+ *     url: string,
+ *     thumbnail: string,
+ *     size: int,
+ *     sort_order: int,
+ *     created_at: string
+ * }
  */
 class GalleryRepository
 {
+    /** Column set written by bcc_collections schema — every field is NOT NULL. */
+    private const COLL_REQUIRED = [
+        'id', 'post_id', 'user_id', 'name', 'sort_order', 'image_count', 'created_at',
+    ];
+
+    /** Column set written by bcc_collection_images schema — every field is NOT NULL. */
+    private const IMG_REQUIRED = [
+        'id', 'collection_id', 'file', 'url', 'thumbnail', 'size', 'sort_order', 'created_at',
+    ];
+
+    /**
+     * Verify a raw wpdb row carries every required column. Detects SELECT-list
+     * drift (aliases renamed, columns dropped) at the boundary so we never
+     * return a row with silently-defaulted fields.
+     *
+     * @param array<string, mixed> $data
+     * @param list<string>         $required
+     */
+    private static function assertColumns(array $data, array $required, string $context): void
+    {
+        foreach ($required as $col) {
+            if (!array_key_exists($col, $data)) {
+                throw new \LogicException(
+                    "[GalleryRepository] Missing required column '{$col}' in {$context} result — SELECT list drift?"
+                );
+            }
+        }
+    }
+
+    /**
+     * Hydrate a raw wpdb row into a shaped CollectionRow object.
+     * All columns are NOT NULL in the schema, so missing keys are a contract
+     * violation (LogicException), not a run-time condition to paper over.
+     *
+     * @phpstan-return CollectionRow
+     */
+    private static function hydrateCollection(object $row): object
+    {
+        $a = (array) $row;
+        self::assertColumns($a, self::COLL_REQUIRED, 'bcc_collections');
+        return (object) [
+            'id'          => (int) $a['id'],
+            'post_id'     => (int) $a['post_id'],
+            'user_id'     => (int) $a['user_id'],
+            'name'        => (string) $a['name'],
+            'sort_order'  => (int) $a['sort_order'],
+            'image_count' => (int) $a['image_count'],
+            'created_at'  => (string) $a['created_at'],
+        ];
+    }
+
+    /**
+     * Hydrate a raw wpdb row into a shaped ImageRow object.
+     * All columns are NOT NULL in the schema — see hydrateCollection() notes.
+     *
+     * @phpstan-return ImageRow
+     */
+    private static function hydrateImage(object $row): object
+    {
+        $a = (array) $row;
+        self::assertColumns($a, self::IMG_REQUIRED, 'bcc_collection_images');
+        return (object) [
+            'id'            => (int) $a['id'],
+            'collection_id' => (int) $a['collection_id'],
+            'file'          => (string) $a['file'],
+            'url'           => (string) $a['url'],
+            'thumbnail'     => (string) $a['thumbnail'],
+            'size'          => (int) $a['size'],
+            'sort_order'    => (int) $a['sort_order'],
+            'created_at'    => (string) $a['created_at'],
+        ];
+    }
+
     /** @var string Explicit column list for bcc_collections. */
     private const COLL_COLUMNS = 'id, post_id, user_id, name, sort_order, image_count, created_at';
 
@@ -84,13 +182,15 @@ class GalleryRepository
 
     /**
      * Read-only collection lookup (no INSERT). Used by render_view().
+     *
+     * @phpstan-return CollectionRow|null
      */
     public static function get_collection(int $post_id, int $sort_order): ?object
     {
         $cache_key = "coll_{$post_id}_{$sort_order}";
         $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
         if ($cached !== false) {
-            return $cached ?: null;
+            return is_object($cached) ? self::hydrateCollection($cached) : null;
         }
 
         global $wpdb;
@@ -104,11 +204,13 @@ class GalleryRepository
         );
 
         wp_cache_set($cache_key, $result ?: 0, self::CACHE_GROUP, self::CACHE_TTL);
-        return $result;
+        return is_object($result) ? self::hydrateCollection($result) : null;
     }
 
-    /** @return object|null */
-    public static function get_or_create_collection(int $post_id, int $user_id, int $sort_order)
+    /**
+     * @phpstan-return CollectionRow|null
+     */
+    public static function get_or_create_collection(int $post_id, int $user_id, int $sort_order): ?object
     {
         global $wpdb;
         $table = self::collections_table();
@@ -122,8 +224,8 @@ class GalleryRepository
             )
         );
 
-        if ($existing) {
-            return $existing;
+        if (is_object($existing)) {
+            return self::hydrateCollection($existing);
         }
 
         // Resolve the page owner so the collection is always attributed
@@ -161,7 +263,7 @@ class GalleryRepository
         wp_cache_delete("coll_{$post_id}_{$sort_order}", self::CACHE_GROUP);
         self::invalidatePostCaches($post_id);
 
-        return $row;
+        return is_object($row) ? self::hydrateCollection($row) : null;
     }
 
     /* ======================================================
@@ -319,7 +421,7 @@ class GalleryRepository
         return $image_id;
     }
 
-    /** @return array{items: array<int, object>, total: int} */
+    /** @phpstan-return array{items: list<ImageRow>, total: int} */
     public static function get_images_paged(int $collection_id, int $page = 1, int $per_page = 12): array
     {
         $page = max(1, $page);
@@ -328,7 +430,7 @@ class GalleryRepository
 
         $cache_key = self::imgCacheKey($collection_id, $page, $per_page);
         $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
-        if ($cached !== false) {
+        if (is_array($cached) && isset($cached['items'], $cached['total'])) {
             return $cached;
         }
 
@@ -354,9 +456,26 @@ class GalleryRepository
             )
         );
 
+        if ($items !== null && !is_array($items)) {
+            throw new \RuntimeException(
+                '[GalleryRepository] get_images_paged: $wpdb->get_results returned non-array, non-null value'
+            );
+        }
+
+        $hydrated = [];
+        foreach ((array) $items as $row) {
+            if (!is_object($row)) {
+                // Silently skipping would corrupt pagination / image counts.
+                throw new \RuntimeException(
+                    '[GalleryRepository] get_images_paged: non-object row in result set'
+                );
+            }
+            $hydrated[] = self::hydrateImage($row);
+        }
+
         $result = [
-            'items' => is_array($items) ? $items : [],
-            'total' => $total
+            'items' => $hydrated,
+            'total' => $total,
         ];
 
         wp_cache_set($cache_key, $result, self::CACHE_GROUP, self::CACHE_TTL);
@@ -413,7 +532,7 @@ class GalleryRepository
 
     /**
      * @param array<int, int> $image_ids
-     * @return array{deleted: array<int, object>, failed: array<int, int>}
+     * @phpstan-return array{deleted: list<ImageRow>, failed: list<int>}
      */
     public static function delete_images_bulk(array $image_ids, int $collection_id): array
     {
@@ -433,9 +552,21 @@ class GalleryRepository
             )
         );
 
+        if ($found !== null && !is_array($found)) {
+            throw new \RuntimeException(
+                '[GalleryRepository] delete_images_bulk: $wpdb->get_results returned non-array, non-null value'
+            );
+        }
+
         $found_map = [];
-        foreach ($found as $img) {
-            $found_map[(int) $img->id] = $img;
+        foreach ((array) $found as $img) {
+            if (!is_object($img)) {
+                throw new \RuntimeException(
+                    '[GalleryRepository] delete_images_bulk: non-object row in result set'
+                );
+            }
+            $hydrated = self::hydrateImage($img);
+            $found_map[$hydrated->id] = $hydrated;
         }
 
         $deleted = [];
@@ -450,7 +581,7 @@ class GalleryRepository
         }
 
         if (!empty($deleted)) {
-            $del_ids = array_map(function ($img) { return (int) $img->id; }, $deleted);
+            $del_ids = array_map(static fn(object $img): int => $img->id, $deleted);
             $del_placeholders = implode(',', array_fill(0, count($del_ids), '%d'));
 
             $wpdb->query('START TRANSACTION');
@@ -490,7 +621,7 @@ class GalleryRepository
         return ['deleted' => $deleted, 'failed' => $failed];
     }
 
-    /** @return object|false */
+    /** @phpstan-return ImageRow|false */
     public static function delete_image(int $image_id, int $collection_id = 0)
     {
         global $wpdb;
@@ -513,7 +644,9 @@ class GalleryRepository
             );
         }
 
-        if (!$image) return false;
+        if (!is_object($image)) return false;
+
+        $hydrated = self::hydrateImage($image);
 
         $wpdb->query('START TRANSACTION');
 
@@ -529,7 +662,7 @@ class GalleryRepository
                 "UPDATE " . self::collections_table() . "
                  SET image_count = GREATEST(image_count - 1, 0)
                  WHERE id=%d",
-                $image->collection_id
+                $hydrated->collection_id
             )
         );
 
@@ -540,9 +673,9 @@ class GalleryRepository
 
         $wpdb->query('COMMIT');
 
-        self::invalidateCollectionCaches($image->collection_id);
+        self::invalidateCollectionCaches($hydrated->collection_id);
 
-        return $image;
+        return $hydrated;
     }
 
     /**

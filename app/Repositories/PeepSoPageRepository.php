@@ -64,11 +64,13 @@ final class PeepSoPageRepository
         $cache_key = "cat_ids_{$pageId}";
         $cached = wp_cache_get($cache_key, self::CACHE_GROUP);
         if ($cached !== false) {
-            return $cached;
+            return is_array($cached) ? $cached : [];
         }
 
-        $rows   = self::getCategoryRowsForPage($pageId);
-        $result = array_map(fn(object $row): int => (int) $row->cat_id, $rows);
+        $result = [];
+        foreach (self::getCategoryRowsForPage($pageId) as $row) {
+            $result[] = (int) $row->cat_id;
+        }
 
         wp_cache_set($cache_key, $result, self::CACHE_GROUP, self::CACHE_TTL);
         return $result;
@@ -88,10 +90,13 @@ final class PeepSoPageRepository
     }
 
     /**
-     * Get category rows for a given page (category_id as 'cat_id').
+     * Get category rows for a given page (category_id exposed as 'cat_id').
+     *
+     * Rows are hydrated to a shaped stdClass with a pre-cast integer
+     * ->cat_id — callers receive typed data, not raw wpdb strings.
      *
      * @param int $pageId PeepSo page ID.
-     * @return object[] Array of objects with ->cat_id.
+     * @return list<object{cat_id: int}>
      */
     public static function getCategoryRowsForPage(int $pageId): array
     {
@@ -102,10 +107,35 @@ final class PeepSoPageRepository
         global $wpdb;
         $table = self::tableName();
 
-        return $wpdb->get_results($wpdb->prepare(
+        $rows = $wpdb->get_results($wpdb->prepare(
             "SELECT " . self::CAT_COL . " AS cat_id FROM {$table} WHERE " . self::PAGE_COL . " = %d",
             $pageId
         ));
+
+        if ($rows !== null && !is_array($rows)) {
+            throw new \RuntimeException(
+                '[PeepSoPageRepository] getCategoryRowsForPage: $wpdb->get_results returned non-array, non-null value'
+            );
+        }
+
+        $hydrated = [];
+        foreach ((array) $rows as $row) {
+            if (!is_object($row)) {
+                throw new \RuntimeException(
+                    '[PeepSoPageRepository] getCategoryRowsForPage: non-object row in result set'
+                );
+            }
+            $a = (array) $row;
+            if (!array_key_exists('cat_id', $a)) {
+                throw new \LogicException(
+                    "[PeepSoPageRepository] Missing required column 'cat_id' in peepso_page_categories result — SELECT alias drift?"
+                );
+            }
+            $hydrated[] = (object) [
+                'cat_id' => (int) $a['cat_id'],
+            ];
+        }
+        return $hydrated;
     }
 
     /**

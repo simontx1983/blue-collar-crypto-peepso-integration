@@ -15,6 +15,9 @@ use BCC\Core\Log\Logger;
 /**
  * Gallery AJAX Handler
  * Combines gallery meta and main gallery functionality.
+ *
+ * @phpstan-import-type CollectionRow from GalleryRepository
+ * @phpstan-import-type ImageRow from GalleryRepository
  */
 class GalleryController
 {
@@ -34,9 +37,9 @@ class GalleryController
     ====================================================== */
 
     /**
-     * @return object
+     * @phpstan-return CollectionRow
      */
-    private static function getCollectionOrFail(int $post_id, int $row)
+    private static function getCollectionOrFail(int $post_id, int $row): object
     {
         $collection = GalleryRepository::get_or_create_collection(
             $post_id,
@@ -44,8 +47,16 @@ class GalleryController
             $row
         );
 
-        if (!$collection) {
+        if ($collection === null) {
             wp_send_json_error(['message' => 'Unable to load collection']);
+            // Belt-and-suspenders: wp_send_json_error() normally calls wp_die()
+            // which exits, but the `wp_die_handler` filter can replace the
+            // handler with one that returns — in that case, we must not fall
+            // through to `return $collection` (which would be null).
+            // phpstan-wordpress types wp_send_json_error as `never`, so this
+            // line is statically unreachable; empirically it guards against
+            // hijacked handlers. @phpstan-ignore deadCode.unreachable
+            exit;
         }
 
         return $collection;
@@ -432,10 +443,14 @@ class GalleryController
         self::canEditOrFail($post_id);
 
         $domain = AbstractPageType::get_domain_for_post($post_id);
-        if (!$domain) {
+        if ($domain === null) {
             wp_send_json_error(['message' => 'Unsupported post type']);
         }
-        if (!call_user_func([$domain, 'is_valid_field'], $field)) {
+        // Contract check delegates to AbstractPageType::assertContract() which
+        // handles tagged logging, correlation ID and health-counter increment.
+        if (!AbstractPageType::assertContract($domain, $post_id, $field, __METHOD__)
+            || !$domain::is_valid_field($field)
+        ) {
             wp_send_json_error(['message' => 'Invalid field']);
         }
 
@@ -487,10 +502,14 @@ class GalleryController
         self::canEditOrFail($post_id);
 
         $domain = AbstractPageType::get_domain_for_post($post_id);
-        if (!$domain) {
+        if ($domain === null) {
             wp_send_json_error(['message' => 'Unsupported post type']);
         }
-        if (!call_user_func([$domain, 'is_valid_field'], $field)) {
+        // Contract check delegates to AbstractPageType::assertContract() which
+        // handles tagged logging, correlation ID and health-counter increment.
+        if (!AbstractPageType::assertContract($domain, $post_id, $field, __METHOD__)
+            || !$domain::is_valid_field($field)
+        ) {
             wp_send_json_error(['message' => 'Invalid field']);
         }
 

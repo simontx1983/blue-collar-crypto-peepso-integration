@@ -10,6 +10,8 @@ use BCC\PeepSo\Repositories\GalleryRepository;
 
 /**
  * Gallery Renderer (View + Edit)
+ *
+ * @phpstan-import-type ImageRow from GalleryRepository
  */
 class GalleryRenderer
 {
@@ -126,7 +128,7 @@ class GalleryRenderer
     /* ======================================================
        MAIN IMAGE SLIDER
     ====================================================== */
-    /** @param array<int, object> $images */
+    /** @phpstan-param list<ImageRow> $images */
     private static function renderMainSlider(array $images): void
     {
         echo '<div class="bcc-gallery-slider-wrapper">';
@@ -171,13 +173,14 @@ class GalleryRenderer
     /* ======================================================
        THUMBNAIL - WITH REPEATER DATA
     ====================================================== */
+    /** @phpstan-param ImageRow $img */
     private static function renderThumbnail(object $img, int $row = 0): void
     {
         echo '<div class="bcc-gallery-thumb-wrapper" draggable="true" data-id="' . esc_attr((string) $img->id) . '" data-row="' . esc_attr((string) $row) . '">';
 
         echo '<input type="checkbox" class="bcc-thumb-select">';
 
-        echo '<img src="' . esc_url(set_url_scheme($img->thumbnail ?: $img->url)) . '" loading="lazy" alt="">';
+        echo '<img src="' . esc_url(set_url_scheme($img->thumbnail !== '' ? $img->thumbnail : $img->url)) . '" loading="lazy" alt="">';
 
         echo '<span class="bcc-gallery-remove" title="Remove image">×</span>';
 

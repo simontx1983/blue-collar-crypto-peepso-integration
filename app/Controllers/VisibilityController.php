@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
 
 use BCC\PeepSo\Security\AjaxSecurity;
 use BCC\Core\Security\Throttle;
+use BCC\PeepSo\Domain\AbstractPageType;
 
 /**
  * AJAX – Field Visibility Controller
@@ -52,10 +53,13 @@ class VisibilityController
         AjaxSecurity::require_edit_permission($post_id);
 
         // Validate field against domain allowlist (mirrors InlineEditController pattern).
-        // No class_exists guard — if AbstractPageType is unavailable, reject the request
-        // rather than silently accepting arbitrary field names.
-        $domain = \BCC\PeepSo\Domain\AbstractPageType::get_domain_for_post($post_id);
-        if (!$domain || !method_exists($domain, 'is_valid_field') || !call_user_func([$domain, 'is_valid_field'], $field)) {
+        // Contract check delegates to AbstractPageType::assertContract() — see
+        // that method for the fail-soft + fail-loud rationale.
+        $domain = AbstractPageType::get_domain_for_post($post_id);
+        if ($domain === null
+            || !AbstractPageType::assertContract($domain, $post_id, $field, __METHOD__)
+            || !$domain::is_valid_field($field)
+        ) {
             wp_send_json_error(['message' => 'Invalid field']);
         }
 

@@ -77,23 +77,23 @@ final class PageRepairService
 
         $results = [
             'action'  => 'peepso_rebuild_shadows',
-            'details' => is_array($log) ? $log : [],
+            'details' => $log,
         ];
         if (isset($log['error'])) {
             $results['error']   = $log['error'];
             $results['details'] = [];
         } else {
             $results['pages_scanned'] = count(array_filter(
-                (array) $log,
-                static fn($line) => is_string($line) && str_starts_with($line, '🔍')
+                $log,
+                static fn($line) => str_starts_with($line, '🔍')
             ));
             $results['shadows_created'] = count(array_filter(
-                (array) $log,
-                static fn($line) => is_string($line) && str_contains($line, '✅ Created')
+                $log,
+                static fn($line) => str_contains($line, '✅ Created')
             ));
             $results['titles_fixed'] = count(array_filter(
-                (array) $log,
-                static fn($line) => is_string($line) && str_contains($line, '🔧 Fixed title')
+                $log,
+                static fn($line) => str_contains($line, '🔧 Fixed title')
             ));
         }
 
@@ -135,12 +135,14 @@ final class PageRepairService
         $map = bcc_get_category_map();
         $log = [];
 
-        $pages = $pageId !== null
-            ? self::loadSinglePage($pageId)
-            : self::loadAllPages();
-
-        if (isset($pages['error'])) {
-            return $pages;
+        if ($pageId !== null) {
+            $single = self::loadSinglePage($pageId);
+            if ($single === null) {
+                return ['error' => 'Invalid PeepSo Page'];
+            }
+            $pages = [$single];
+        } else {
+            $pages = self::loadAllPages();
         }
 
         foreach ($pages as $page) {
@@ -162,7 +164,7 @@ final class PageRepairService
                 $existing = get_posts([
                     'post_type'      => $cpt,
                     'meta_key'       => '_peepso_page_id',
-                    'meta_value'     => $page->ID,
+                    'meta_value'     => (string) $page->ID,
                     'posts_per_page' => 1,
                     'fields'         => 'ids',
                     'no_found_rows'  => true,
@@ -248,16 +250,13 @@ final class PageRepairService
         }
     }
 
-    /**
-     * @return array{error: string}|array<int, \WP_Post>
-     */
-    private static function loadSinglePage(int $pageId): array
+    private static function loadSinglePage(int $pageId): ?\WP_Post
     {
         $page = get_post($pageId);
-        if (!$page || $page->post_type !== 'peepso-page') {
-            return ['error' => 'Invalid PeepSo Page'];
+        if (!$page instanceof \WP_Post || $page->post_type !== 'peepso-page') {
+            return null;
         }
-        return [$page];
+        return $page;
     }
 
     /**
