@@ -182,6 +182,7 @@ class GalleryRepository
 
     /**
      * Read-only collection lookup (no INSERT). Used by render_view().
+     * Bounded: WHERE post_id=%d AND sort_order=%d LIMIT 1.
      *
      * @phpstan-return CollectionRow|null
      */
@@ -458,7 +459,7 @@ class GalleryRepository
 
         if ($items !== null && !is_array($items)) {
             throw new \RuntimeException(
-                '[GalleryRepository] get_images_paged: $wpdb->get_results returned non-array, non-null value'
+                '[GalleryRepository] get_images_paged: query returned non-array, non-null value'
             );
         }
 
@@ -554,7 +555,7 @@ class GalleryRepository
 
         if ($found !== null && !is_array($found)) {
             throw new \RuntimeException(
-                '[GalleryRepository] delete_images_bulk: $wpdb->get_results returned non-array, non-null value'
+                '[GalleryRepository] delete_images_bulk: query returned non-array, non-null value'
             );
         }
 

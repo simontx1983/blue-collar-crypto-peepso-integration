@@ -47,7 +47,7 @@ final class PeepSoPageRepository
         // Validate required columns. SHOW COLUMNS is cheap and runs once
         // per process. If either column is missing, refuse the table so
         // downstream queries don't quietly fail and the log captures the
-        // drift.
+        // drift. Bounded by MySQL's own LIMIT on SHOW COLUMNS metadata.
         $have = [];
         $rows = $wpdb->get_results("SHOW COLUMNS FROM `{$table}`");
         if (is_array($rows)) {
@@ -149,14 +149,18 @@ final class PeepSoPageRepository
         global $wpdb;
         $table = self::tableName();
 
+        // Scope: categories of a single page. Bounded by WHERE = %d and
+        // an explicit LIMIT in case the mapping table ever goes pathological.
         $rows = $wpdb->get_results($wpdb->prepare(
-            "SELECT " . self::CAT_COL . " AS cat_id FROM {$table} WHERE " . self::PAGE_COL . " = %d",
+            "SELECT " . self::CAT_COL . " AS cat_id FROM {$table}
+              WHERE " . self::PAGE_COL . " = %d
+              LIMIT 100",
             $pageId
         ));
 
         if ($rows !== null && !is_array($rows)) {
             throw new \RuntimeException(
-                '[PeepSoPageRepository] getCategoryRowsForPage: $wpdb->get_results returned non-array, non-null value'
+                '[PeepSoPageRepository] getCategoryRowsForPage: query returned non-array, non-null value'
             );
         }
 
