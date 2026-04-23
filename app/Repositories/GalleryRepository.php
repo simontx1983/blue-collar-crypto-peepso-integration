@@ -733,9 +733,15 @@ class GalleryRepository
      * Called from the deleted_user lifecycle hook so that bcc_collections
      * rows referencing a no-longer-existent user_id do not persist
      * indefinitely (which would also leave the companion
-     * bcc_collection_images rows dangling). Per-post iteration so the
-     * existing post-scoped transactional delete in deleteByPostId is
-     * reused — avoids duplicating the two-table delete semantics.
+     * bcc_collection_images rows dangling).
+     *
+     * Scoped strictly to collections whose user_id matches. A prior
+     * implementation delegated to deleteByPostId() which deletes EVERY
+     * collection on the affected post — that destroyed collaborators'
+     * data on any page the deleted user had contributed to (silent
+     * cross-user data loss). This version deletes only the user's own
+     * collections + their images, leaving other users' collections on
+     * the same post untouched.
      */
     public static function deleteByUserId(int $user_id): void
     {
@@ -746,21 +752,61 @@ class GalleryRepository
         }
 
         $coll_table = self::collections_table();
+        $img_table  = self::images_table();
 
-        // Scope: every post_id that has at least one collection owned by
-        // this user. DISTINCT to avoid redundant deleteByPostId calls
-        // when a user owns multiple collections on one post.
-        $post_ids = $wpdb->get_col($wpdb->prepare(
-            "SELECT DISTINCT post_id FROM {$coll_table} WHERE user_id = %d",
+        /** @var list<object{id: int|numeric-string, post_id: int|numeric-string}>|null $rows */
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, post_id FROM {$coll_table} WHERE user_id = %d",
             $user_id
         ));
 
-        if (empty($post_ids)) {
+        if (!is_array($rows) || empty($rows)) {
             return;
         }
 
-        foreach ($post_ids as $post_id) {
-            self::deleteByPostId((int) $post_id);
+        $collection_ids = [];
+        $post_ids       = [];
+        foreach ($rows as $row) {
+            if (!is_object($row)) {
+                continue;
+            }
+            $collection_ids[] = (int) $row->id;
+            $post_ids[(int) $row->post_id] = true;
+        }
+        $collection_ids = array_values(array_unique(array_filter($collection_ids)));
+        if (empty($collection_ids)) {
+            return;
+        }
+
+        $placeholders = implode(',', array_fill(0, count($collection_ids), '%d'));
+
+        $wpdb->query('START TRANSACTION');
+
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$img_table} WHERE collection_id IN ({$placeholders})",
+            ...$collection_ids
+        ));
+        if ($wpdb->last_error) {
+            $wpdb->query('ROLLBACK');
+            return;
+        }
+
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$coll_table} WHERE id IN ({$placeholders})",
+            ...$collection_ids
+        ));
+        if ($wpdb->last_error !== '') {
+            $wpdb->query('ROLLBACK');
+            return;
+        }
+
+        $wpdb->query('COMMIT');
+
+        foreach ($collection_ids as $cid) {
+            self::invalidateCollectionCaches($cid);
+        }
+        foreach (array_keys($post_ids) as $pid) {
+            self::invalidatePostCaches((int) $pid);
         }
     }
 }

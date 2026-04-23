@@ -25,6 +25,13 @@ final class ShadowPageSyncService
     private const INTEGRITY_META = '_bcc_integrity_ok';
     private const LOCK_TTL       = 30;
 
+    /** Continuation hook for onUserDeleted batching. */
+    private const USER_CLEANUP_HOOK = 'bcc_peepso_user_cleanup_batch';
+
+    /** Max shadow posts handled per CPT per batch. A delete_user admin
+     *  request must not stall on tens of thousands of shadows. */
+    private const USER_CLEANUP_BATCH = 100;
+
     /** @var array<int, array{title: string, author: int}> */
     private static array $pending = [];
 
@@ -54,6 +61,7 @@ final class ShadowPageSyncService
         // fires AFTER the wp_users row is gone but with the id still in
         // scope, so this is the correct hook for cross-table cleanup.
         add_action('deleted_user', [self::class, 'onUserDeleted'], 10, 1);
+        add_action(self::USER_CLEANUP_HOOK, [self::class, 'runUserCleanupBatch'], 10, 1);
     }
 
     /**
@@ -436,6 +444,30 @@ final class ShadowPageSyncService
      */
     public static function onUserDeleted($userId): void
     {
+        self::runUserCleanupBatch($userId);
+    }
+
+    /**
+     * Trash up to {@see self::USER_CLEANUP_BATCH} shadow CPTs per type
+     * for the given user. If any CPT type still has a full batch, a
+     * continuation event is scheduled rather than blocking the current
+     * admin request — a user who owns tens of thousands of shadow
+     * posts previously caused the `deleted_user` hook to OOM or time
+     * out under `posts_per_page => -1`.
+     *
+     * We query excluding `trash` so re-invocations don't re-enumerate
+     * shadows we already trashed in an earlier batch (wp_trash_post
+     * does not change post_author).
+     *
+     * Gallery collection cleanup (collections rows attributed to this
+     * user on other users' pages) runs only after the final batch so
+     * we touch it exactly once, with scoped deletes that do not spill
+     * across to other users' collections on the same posts.
+     *
+     * @param int $userId
+     */
+    public static function runUserCleanupBatch($userId): void
+    {
         $userId = (int) $userId;
         if ($userId <= 0) {
             return;
@@ -445,6 +477,8 @@ final class ShadowPageSyncService
             ? bcc_get_shadow_cpt_types()
             : ['validators', 'nft', 'builder', 'dao'];
 
+        $hasMore = false;
+
         foreach ($shadowTypes as $cpt) {
             if (!post_type_exists($cpt)) {
                 continue;
@@ -452,11 +486,17 @@ final class ShadowPageSyncService
 
             $owned = get_posts([
                 'post_type'      => $cpt,
-                'post_status'    => 'any',
+                // Exclude 'trash' so subsequent continuation batches
+                // don't re-fetch rows we already trashed — wp_trash_post
+                // leaves post_author intact and the author filter would
+                // keep matching otherwise.
+                'post_status'    => ['publish', 'draft', 'pending', 'future', 'private'],
                 'author'         => $userId,
-                'posts_per_page' => -1,
+                'posts_per_page' => self::USER_CLEANUP_BATCH,
                 'fields'         => 'ids',
                 'no_found_rows'  => true,
+                'orderby'        => 'ID',
+                'order'          => 'ASC',
             ]);
 
             foreach ($owned as $cptId) {
@@ -465,11 +505,21 @@ final class ShadowPageSyncService
                 }
                 wp_trash_post((int) $cptId);
             }
+
+            if (count($owned) === self::USER_CLEANUP_BATCH) {
+                $hasMore = true;
+            }
         }
 
-        // Remove any remaining collection rows still attributed to this
-        // user on posts owned by OTHER users (e.g. collaborative pages),
-        // so bcc_collections.user_id never references a deleted account.
+        if ($hasMore) {
+            wp_schedule_single_event(time() + 30, self::USER_CLEANUP_HOOK, [$userId]);
+            return;
+        }
+
+        // Final batch — purge any remaining collection rows still
+        // attributed to this user on posts owned by OTHER users.
+        // Scoped delete: only the user's own collections, not everything
+        // on the affected posts (see GalleryRepository::deleteByUserId).
         if (class_exists(GalleryRepository::class)) {
             GalleryRepository::deleteByUserId($userId);
         }
