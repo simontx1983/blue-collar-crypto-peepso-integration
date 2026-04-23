@@ -9,12 +9,28 @@ if (!defined('ABSPATH')) {
 
 add_filter('peepso_page_segment_menu_links', function ($segments) {
 
-    $segments[0][] = [
+    $dashboard = [
         'href'  => 'dashboard',
         'title' => __('Dashboard', 'blue-collar-crypto'),
         'icon'  => 'gsi gsi-home',
     ];
 
+    // Shape defense. PeepSo's contract for this filter is "segments are
+    // grouped by numeric index at [0]", but a future version or another
+    // plugin upstream of us could normalize to non-numeric keys. If our
+    // assumption doesn't hold, fall back to a namespaced key so the
+    // dashboard link at least appears somewhere coherent, rather than
+    // silently materializing a phantom [0] bucket PeepSo's renderer may
+    // ignore.
+    if (!is_array($segments)) {
+        return ['bcc' => [$dashboard]];
+    }
+    if (!isset($segments[0]) || !is_array($segments[0])) {
+        $segments['bcc'][] = $dashboard;
+        return $segments;
+    }
+
+    $segments[0][] = $dashboard;
     return $segments;
 
 });

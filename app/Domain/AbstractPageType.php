@@ -547,10 +547,22 @@ abstract class AbstractPageType
 
         $targetType = $class::post_type();
 
+        // Mirror the source page's publish state onto the shadow so a
+        // private / draft / pending PeepSo page doesn't spawn a public
+        // shadow CPT that shows up in REST collections, sitemaps, or
+        // other-plugin queries that don't know about our _bcc_visibility
+        // meta gate. post_level view access is still gated by
+        // bcc_user_can_view_post at render; this change prevents leakage
+        // at the query layer.
+        $sourceStatus = (string) $page->post_status;
+        $shadowStatus = in_array($sourceStatus, ['publish', 'private', 'draft', 'pending', 'future'], true)
+            ? $sourceStatus
+            : 'private';
+
         $id = wp_insert_post([
             'post_type'   => $targetType,
             'post_title'  => $page->post_title,
-            'post_status' => 'publish',
+            'post_status' => $shadowStatus,
             'post_author' => (int) $page->post_author,
             'meta_input'  => [
                 '_peepso_page_id' => $page_id,

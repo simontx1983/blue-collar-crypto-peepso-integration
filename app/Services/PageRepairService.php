@@ -23,6 +23,9 @@ if (!defined('ABSPATH')) {
 final class PageRepairService
 {
     private const CRON_HOOK     = 'bcc_shadow_cpt_reconcile';
+    private const CRON_CONTINUE_HOOK = 'bcc_shadow_cpt_reconcile_continue';
+    private const CRON_OFFSET_TRANSIENT = 'bcc_shadow_cpt_reconcile_offset';
+    private const CRON_OFFSET_TTL = 86400; // 24h — a stuck offset self-heals at daily tick.
     private const BATCH_SIZE    = 50;
     private const POST_ACTION   = 'bcc_peepso_rebuild_shadows';
     private const NONCE_ACTION  = 'bcc_peepso_rebuild_shadows';
@@ -37,6 +40,7 @@ final class PageRepairService
         add_action('admin_post_' . self::POST_ACTION, [self::class, 'handleRepairPost']);
         add_action('init', [self::class, 'scheduleCron']);
         add_action(self::CRON_HOOK, [self::class, 'runReconcileCron']);
+        add_action(self::CRON_CONTINUE_HOOK, [self::class, 'runReconcileCron']);
         add_action(self::BATCH_HOOK, [self::class, 'runBatch'], 10, 1);
     }
 
@@ -50,7 +54,7 @@ final class PageRepairService
             return;
         }
 
-        $post_url = esc_url(admin_url('admin-post.php'));
+        $post_url = admin_url('admin-post.php');
         $running  = self::getRunningJob();
         ?>
         <div style="border:1px solid #ddd;border-radius:6px;padding:16px;">
@@ -65,7 +69,7 @@ final class PageRepairService
                     Refresh to update.
                 </p>
             <?php endif; ?>
-            <form method="post" action="<?php echo $post_url; ?>">
+            <form method="post" action="<?php echo esc_url($post_url); ?>">
                 <?php wp_nonce_field(self::NONCE_ACTION); ?>
                 <input type="hidden" name="action" value="<?php echo esc_attr(self::POST_ACTION); ?>">
                 <button type="submit" class="button button-primary"
@@ -389,7 +393,18 @@ final class PageRepairService
     }
 
     /**
-     * Daily cron: find drifted pages and repair them.
+     * Daily cron entry: processes ONE batch and, if more pages remain,
+     * schedules a continuation event rather than looping until PHP
+     * times out. The prior single-invocation do-while would iterate
+     * every peepso-page in one shot — realistic >10k-page sites
+     * exceeded max_execution_time, the cron silently died mid-run,
+     * and no continuation checkpoint was kept so the next day started
+     * over and hit the same wall at the same prefix. Pages past that
+     * prefix were never reconciled.
+     *
+     * State is an offset kept in a transient with a 24h TTL — if a
+     * continuation event is dropped (queue flushed, object cache
+     * reset), the next daily tick resets to 0 and tries again.
      */
     public static function runReconcileCron(): void
     {
@@ -405,33 +420,52 @@ final class PageRepairService
             return;
         }
 
-        $offset   = 0;
+        $offset   = (int) get_transient(self::CRON_OFFSET_TRANSIENT);
+        if ($offset < 0) {
+            $offset = 0;
+        }
+
+        $pages = get_posts([
+            'post_type'        => 'peepso-page',
+            'posts_per_page'   => self::BATCH_SIZE,
+            'offset'           => $offset,
+            'post_status'      => 'publish',
+            'no_found_rows'    => true,
+            'orderby'          => 'ID',
+            'order'            => 'ASC',
+            // Determinism: reconciliation must see every page, not a
+            // filtered subset another plugin narrows via posts_where.
+            'suppress_filters' => true,
+        ]);
+
         $repaired = 0;
-
-        do {
-            $pages = get_posts([
-                'post_type'      => 'peepso-page',
-                'posts_per_page' => self::BATCH_SIZE,
-                'offset'         => $offset,
-                'post_status'    => 'publish',
-                'no_found_rows'  => true,
-                'orderby'        => 'ID',
-                'order'          => 'ASC',
-            ]);
-
-            foreach ($pages as $page) {
-                if (self::pageNeedsRepair($page, $map)) {
-                    self::repair((int) $page->ID, true);
-                    $repaired++;
-                }
+        foreach ($pages as $page) {
+            if (self::pageNeedsRepair($page, $map)) {
+                self::repair((int) $page->ID, true);
+                $repaired++;
             }
+        }
 
-            $offset += self::BATCH_SIZE;
-        } while (count($pages) === self::BATCH_SIZE);
+        // Persist the incremented offset. If a full batch came back,
+        // schedule the next batch as a single event and let the WP
+        // cron runner pick it up in a fresh PHP invocation with a
+        // fresh max_execution_time budget.
+        if (count($pages) === self::BATCH_SIZE) {
+            set_transient(self::CRON_OFFSET_TRANSIENT, $offset + self::BATCH_SIZE, self::CRON_OFFSET_TTL);
+            if (!wp_next_scheduled(self::CRON_CONTINUE_HOOK)) {
+                wp_schedule_single_event(time() + 60, self::CRON_CONTINUE_HOOK);
+            }
+        } else {
+            // Reconciliation completed a full pass — clear the offset
+            // so tomorrow's daily tick starts from the top.
+            delete_transient(self::CRON_OFFSET_TRANSIENT);
+        }
 
         if ($repaired > 0 && class_exists('\\BCC\\Core\\Log\\Logger')) {
-            \BCC\Core\Log\Logger::info('[bcc-peepso] Shadow CPT reconciliation', [
+            \BCC\Core\Log\Logger::info('[bcc-peepso] Shadow CPT reconciliation batch', [
+                'offset'   => $offset,
                 'repaired' => $repaired,
+                'more'     => count($pages) === self::BATCH_SIZE,
             ]);
         }
     }

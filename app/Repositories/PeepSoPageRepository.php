@@ -22,7 +22,12 @@ final class PeepSoPageRepository
     private const CAT_COL  = 'pm_cat_id';
 
     /**
-     * Check if the PeepSo page-categories relation table exists.
+     * Check if the PeepSo page-categories relation table exists AND carries
+     * the columns we depend on. A PeepSo schema change that renamed
+     * pm_page_id / pm_cat_id would otherwise produce silent empty results
+     * across the shadow-CPT pipeline (dashboard tabs disappear, sync
+     * becomes a no-op) rather than a loud failure we can alert on.
+     *
      * Result is cached per-process.
      */
     public static function tableExists(): bool
@@ -34,8 +39,45 @@ final class PeepSoPageRepository
 
         global $wpdb;
         $table = self::tableName();
-        $exists = ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table);
-        return $exists;
+        $tableHere = ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) === $table);
+        if (!$tableHere) {
+            return $exists = false;
+        }
+
+        // Validate required columns. SHOW COLUMNS is cheap and runs once
+        // per process. If either column is missing, refuse the table so
+        // downstream queries don't quietly fail and the log captures the
+        // drift.
+        $have = [];
+        $rows = $wpdb->get_results("SHOW COLUMNS FROM `{$table}`");
+        if (is_array($rows)) {
+            foreach ($rows as $row) {
+                if (isset($row->Field)) {
+                    $have[(string) $row->Field] = true;
+                }
+            }
+        }
+
+        $missing = [];
+        foreach ([self::PAGE_COL, self::CAT_COL] as $required) {
+            if (!isset($have[$required])) {
+                $missing[] = $required;
+            }
+        }
+
+        if (!empty($missing)) {
+            if (class_exists('\\BCC\\Core\\Log\\Logger')) {
+                \BCC\Core\Log\Logger::error(
+                    '[bcc-peepso] PeepSo peepso_page_categories schema drift — required columns missing',
+                    ['table' => $table, 'missing' => $missing, 'found' => array_keys($have)]
+                );
+            } else {
+                error_log('[bcc-peepso] peepso_page_categories missing columns: ' . implode(',', $missing));
+            }
+            return $exists = false;
+        }
+
+        return $exists = true;
     }
 
     /**

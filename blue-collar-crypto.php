@@ -23,9 +23,25 @@ define('BCC_PEEPSO_TEMPLATES_PATH', BCC_PEEPSO_PLUGIN_PATH . 'templates/');
 define('BCC_PEEPSO_URL', plugin_dir_url(__FILE__));
 
 // ── PSR-4 autoloader ────────────────────────────────────────────────────────
-$bcc_peepso_autoloader = BCC_PEEPSO_PLUGIN_PATH . 'vendor/autoload.php';
-if (file_exists($bcc_peepso_autoloader)) {
+// Must exist. Silently skipping the require was a latent site-killer: the
+// plugins_loaded guards below still passed on PeepSo + bcc-core presence,
+// then bootstrap.php unconditionally referenced \BCC\PeepSo\Services\*
+// FQCNs that no autoloader could resolve — "Class not found" fatal during
+// plugins_loaded, entire site down. Fail loud, fail early, do not let
+// bootstrap load without a working autoloader.
+$bcc_peepso_autoloader    = BCC_PEEPSO_PLUGIN_PATH . 'vendor/autoload.php';
+$bcc_peepso_autoload_ok   = file_exists($bcc_peepso_autoloader);
+if ($bcc_peepso_autoload_ok) {
     require_once $bcc_peepso_autoloader;
+} else {
+    add_action('admin_notices', function () {
+        echo '<div class="notice notice-error"><p><strong>Blue Collar Crypto – PeepSo Integration:</strong> ';
+        echo esc_html__('vendor/ directory is missing — run "composer install" in the plugin directory. Plugin disabled to prevent site-wide fatals.', 'blue-collar-crypto');
+        echo '</p></div>';
+    });
+    if (function_exists('error_log')) {
+        error_log('[bcc-peepso] vendor/autoload.php missing at ' . $bcc_peepso_autoloader . ' — plugin disabled.');
+    }
 }
 
 /**
@@ -46,7 +62,9 @@ register_activation_hook(__FILE__, function () {
  * controller classes (which import bcc-core classes via `use`)
  * are never parsed when bcc-core is inactive.
  */
-add_action('plugins_loaded', 'bcc_init', 20);
+if ($bcc_peepso_autoload_ok) {
+    add_action('plugins_loaded', 'bcc_init', 20);
+}
 
 function bcc_init() {
 

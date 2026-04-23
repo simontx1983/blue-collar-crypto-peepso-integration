@@ -264,10 +264,27 @@ final class ShadowPageSyncService
             return;
         }
 
-        $existing = get_post_meta($pageId, '_linked_' . $post->post_type . '_id', true);
-        if ($existing && (int) $existing !== (int) $postId) {
-            wp_trash_post($postId);
+        $existingId = (int) get_post_meta($pageId, '_linked_' . $post->post_type . '_id', true);
+        if (!$existingId || $existingId === (int) $postId) {
+            return;
         }
+
+        // Stale-pointer guard: the page's linked id may reference a shadow
+        // that was hard-deleted or trashed out-of-band (manual WP admin
+        // delete, user-cleanup cascade, orphan sweep). Without this check,
+        // a freshly-created shadow during PageRepairService::repair would
+        // be trashed instantly because the stale page->shadow backlink is
+        // read before repair rewrites it — producing silent drift where
+        // the page claims a shadow that is in trash.
+        $existingPost = get_post($existingId);
+        if (!$existingPost
+            || $existingPost->post_status === 'trash'
+            || $existingPost->post_type !== $post->post_type
+        ) {
+            return;
+        }
+
+        wp_trash_post($postId);
     }
 
     /**
@@ -282,6 +299,14 @@ final class ShadowPageSyncService
      */
     public static function cascadeTrash($postId): void
     {
+        // Cheap guard before get_post(). These hooks fire for every post
+        // deletion/trash site-wide; a bulk wipe of 10k non-PeepSo posts
+        // should not pay 10k get_post() calls just to bail. get_post_type
+        // hits the post-cache and returns false/'' for missing ids.
+        if (get_post_type($postId) !== 'peepso-page') {
+            return;
+        }
+
         $post = get_post($postId);
         if (!$post || $post->post_type !== 'peepso-page') {
             return;
@@ -325,6 +350,11 @@ final class ShadowPageSyncService
      */
     public static function cascadeDelete($postId): void
     {
+        // Cheap guard — see cascadeTrash for rationale.
+        if (get_post_type($postId) !== 'peepso-page') {
+            return;
+        }
+
         $post = get_post($postId);
         if (!$post || $post->post_type !== 'peepso-page') {
             return;

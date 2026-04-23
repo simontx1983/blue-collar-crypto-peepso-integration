@@ -3,6 +3,22 @@
 if (!class_exists('PeepSoPageUser') || !class_exists('PeepSoPageCategoriesPages')) {
     return;
 }
+
+// Sanity-check the page object we were handed before touching any of
+// its PeepSo-specific accessors. The template-override path means this
+// file runs on every PeepSo page view; one renamed method on $page
+// would otherwise white-screen the entire site.
+if (!isset($page) || !is_object($page) || empty($page->id)) {
+    return;
+}
+
+// The rest of this file is wrapped in try/catch so that any drift in
+// PeepSo's PeepSoPage / PeepSoPageUser / PeepSoPageCategoriesPages
+// contract (a renamed method, a changed return shape) surfaces as a
+// logged error + an empty header, not a site-wide fatal. The override
+// intercepts every PeepSo page render; a fatal here kills the whole
+// page, not just the header, so fail-soft is load-bearing.
+try {
 $PeepSoPageUser = new PeepSoPageUser($page->id);
 $PeepSoPage = $page;
 $coverUrl = $PeepSoPage->get_cover_url();
@@ -270,3 +286,19 @@ jQuery(function() {
 	peepsopagesdata.page_id = +<?php echo (int) $page->id; ?>;
 });
 </script>
+<?php
+} catch (\Throwable $e) {
+    // PeepSo contract broke under us — log once per request and render
+    // nothing rather than taking down the whole page. The outer PeepSo
+    // chrome will still render; only our custom header section is lost.
+    if (class_exists('\\BCC\\Core\\Log\\Logger')) {
+        \BCC\Core\Log\Logger::error('[bcc-peepso] page-header override threw — PeepSo contract drift?', [
+            'page_id' => isset($page->id) ? (int) $page->id : 0,
+            'error'   => $e->getMessage(),
+            'class'   => get_class($e),
+        ]);
+    } else {
+        error_log('[bcc-peepso] page-header override threw: ' . $e->getMessage());
+    }
+}
+?>

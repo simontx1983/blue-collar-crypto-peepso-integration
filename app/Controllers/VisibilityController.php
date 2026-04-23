@@ -23,11 +23,12 @@ class VisibilityController
 
     public static function handle(): void
     {
-        if (!check_ajax_referer('bcc_nonce', 'nonce', false)) {
-            wp_send_json_error([
-                'message' => 'Security check failed'
-            ]);
-        }
+        // Delegate to AjaxSecurity so nonce handling matches the other
+        // two AJAX controllers (InlineEdit/Gallery) — all three now
+        // surface the failure mode the same way (wp_die via
+        // check_ajax_referer), so retries from the client can assume
+        // uniform semantics.
+        AjaxSecurity::verify_nonce();
 
         if (!Throttle::allow('bcc_peepso.visibility', 20, 60)) {
             wp_send_json_error(['message' => 'Too many requests.'], 429);

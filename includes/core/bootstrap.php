@@ -45,12 +45,15 @@ if (!function_exists('bcc_resolve_category_map_from_db')) {
      * @return array<int, array{cpt: string, label: string}>
      */
     function bcc_resolve_category_map_from_db(): array {
+        static $typoLogged = false;
+
         $slug_to_cpt = bcc_get_slug_to_cpt_map();
         $batch_size  = 100;
         $hard_cap    = 1000;
 
         $map    = [];
         $offset = 0;
+        $typoHits = [];
 
         do {
             $cats = get_posts([
@@ -68,6 +71,11 @@ if (!function_exists('bcc_resolve_category_map_from_db')) {
                 $slug = $cat->post_name;
                 if (isset($slug_to_cpt[$slug])) {
                     $map[$cat->ID] = $slug_to_cpt[$slug];
+                    // Track use of the legacy typoed slug so we can retire
+                    // it once the DB is cleaned up. One log per request.
+                    if ($slug === 'vaildators') {
+                        $typoHits[] = (int) $cat->ID;
+                    }
                 }
             }
 
@@ -83,6 +91,14 @@ if (!function_exists('bcc_resolve_category_map_from_db')) {
                 break;
             }
         } while (count($cats) === $batch_size);
+
+        if (!$typoLogged && !empty($typoHits) && class_exists('\\BCC\\Core\\Log\\Logger')) {
+            $typoLogged = true;
+            \BCC\Core\Log\Logger::warning(
+                '[bcc-peepso] legacy typo slug "vaildators" still present in peepso-page-cat — clean up these rows so the alias can be retired',
+                ['cat_ids' => $typoHits]
+            );
+        }
 
         return apply_filters('bcc_category_map', $map);
     }

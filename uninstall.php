@@ -31,12 +31,16 @@ foreach ($cpt_types as $cpt) {
     do {
         $iterations++;
         $posts = get_posts([
-            'post_type'      => $cpt,
-            'posts_per_page' => 100,
-            'post_status'    => 'any',
-            'fields'         => 'ids',
-            'orderby'        => 'ID',
-            'order'          => 'ASC',
+            'post_type'        => $cpt,
+            'posts_per_page'   => 100,
+            'post_status'      => 'any',
+            'fields'           => 'ids',
+            'orderby'          => 'ID',
+            'order'            => 'ASC',
+            // Determinism during uninstall: other active plugins must
+            // not filter this query and hide posts we're trying to
+            // delete. Suppresses posts_* and pre_get_posts filters.
+            'suppress_filters' => true,
         ]);
 
         if (empty($posts)) {

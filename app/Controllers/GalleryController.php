@@ -181,9 +181,18 @@ class GalleryController
 
         $uploaded = [];
 
-        $names = $_FILES['files']['name'] ?? [];
-        $tmp   = $_FILES['files']['tmp_name'] ?? [];
-        $errs  = $_FILES['files']['error'] ?? [];
+        // Shape coercion. A naive client posting `name="files"` (not
+        // `name="files[]"`) produces scalar strings in these arrays;
+        // count() on a non-array throws TypeError in PHP 8+. Force
+        // list-shape at the boundary so the rest of the handler can
+        // assume consistent indices.
+        $names = is_array($_FILES['files']['name'] ?? null)     ? $_FILES['files']['name']     : [];
+        $tmp   = is_array($_FILES['files']['tmp_name'] ?? null) ? $_FILES['files']['tmp_name'] : [];
+        $errs  = is_array($_FILES['files']['error'] ?? null)    ? $_FILES['files']['error']    : [];
+
+        if (empty($names)) {
+            wp_send_json_error(['message' => 'Invalid upload payload — use multi-file upload input (files[]).'], 400);
+        }
 
         // Cap files per request to prevent resource exhaustion (GD thumbnail
         // creation is memory-intensive; 1000 files in one request = OOM).
@@ -214,8 +223,9 @@ class GalleryController
                 continue;
             }
 
-            $file_size = $_FILES['files']['size'][$i] ?? 0;
-            if ($file_size > 10 * 1024 * 1024) {
+            $file_size = (int) (is_array($_FILES['files']['size'] ?? null) ? ($_FILES['files']['size'][$i] ?? 0) : 0);
+            $maxBytes  = (int) apply_filters('bcc_gallery_max_file_bytes', 10 * 1024 * 1024);
+            if ($file_size > $maxBytes) {
                 continue;
             }
 

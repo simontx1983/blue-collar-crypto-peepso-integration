@@ -16,9 +16,20 @@ function bcc_enqueue_assets() {
         return;
     }
 
-    // Only load on PeepSo Pages (rendered via [peepso_pages] shortcode on a regular WP page)
+    // PeepSo pages reach the browser via several routing paths:
+    //   1. A regular WP page containing the [peepso_pages] shortcode.
+    //   2. `is_singular('peepso-page')` — when the page is requested by
+    //      post id / slug directly (our shadow-CPT and dashboard flows).
+    //   3. A query var set by PeepSo's own rewrite handler.
+    // Gating strictly on the shortcode previously meant the bcc-profile
+    // CSS and bcc-all JS silently missed routes (2) and (3), so inline
+    // edit / gallery / visibility UI looked broken on real PeepSo pages.
     global $post;
-    if (!$post || !has_shortcode($post->post_content ?? '', 'peepso_pages')) {
+    $hasShortcode = $post && has_shortcode($post->post_content ?? '', 'peepso_pages');
+    $isPeepsoPage = is_singular('peepso-page');
+    $peepsoQuery  = (bool) get_query_var('peepso_page', false);
+
+    if (!$hasShortcode && !$isPeepsoPage && !$peepsoQuery) {
         return;
     }
 
