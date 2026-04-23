@@ -126,15 +126,12 @@ function bcc_set_field_visibility($post_id, $field, $visibility) {
 
     if ($result) {
         // Bump the visibility version counter atomically for optimistic locking.
-        // Uses a single SQL UPDATE to avoid read-increment-write race conditions
-        // where concurrent saves could both read the same version.
-        global $wpdb;
-        $updated = $wpdb->query($wpdb->prepare(
-            "UPDATE {$wpdb->postmeta} SET meta_value = meta_value + 1 WHERE post_id = %d AND meta_key = '_bcc_vis_version'",
-            $post_id
-        ));
-        if (!$updated) {
-            add_post_meta($post_id, '_bcc_vis_version', 1, true);
+        // Repository-backed so the raw atomic UPDATE lives inside the
+        // architectural Repository layer, not a procedural helper file.
+        if (class_exists('\\BCC\\PeepSo\\Repositories\\VisibilityRepository')) {
+            if (!\BCC\PeepSo\Repositories\VisibilityRepository::bumpVersion((int) $post_id)) {
+                \BCC\PeepSo\Repositories\VisibilityRepository::seedVersion((int) $post_id);
+            }
         }
     }
 

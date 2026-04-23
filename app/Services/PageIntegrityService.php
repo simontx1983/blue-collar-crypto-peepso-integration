@@ -29,7 +29,16 @@ final class PageIntegrityService
 
     public static function register(): void
     {
-        add_action('save_post_peepso-page', [self::class, 'invalidatePageIntegrity'], 5);
+        // Priority 15 (not 5): ShadowPageSyncService hooks save_post at
+        // priority 10 to queue the page for shutdown flush. If we clear the
+        // integrity flag at priority 5, it fires BEFORE the queue is primed
+        // and leaves a window where a concurrent admin_init (or cron hitting
+        // the same page) sees the flag cleared with no pending sync, and may
+        // attempt to recreate shadow CPTs that the sync will recreate a
+        // moment later — risking a duplicate. Running at 15 ensures the flag
+        // is cleared only after the sync service has accepted responsibility
+        // for the rebuild.
+        add_action('save_post_peepso-page', [self::class, 'invalidatePageIntegrity'], 15);
         add_action('save_post_peepso-page-cat', [self::class, 'invalidateCategoryMap']);
         add_action('admin_init', [self::class, 'lockLinkedCptTitles']);
         add_action('admin_init', [self::class, 'detectCategoryMapDrift']);

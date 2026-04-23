@@ -3,6 +3,7 @@
 namespace BCC\PeepSo\Services;
 
 use BCC\PeepSo\Domain\AbstractPageType;
+use BCC\PeepSo\Repositories\LockRepository;
 use BCC\PeepSo\Repositories\PeepSoPageRepository;
 
 if (!defined('ABSPATH')) {
@@ -148,55 +149,70 @@ final class PageRepairService
         foreach ($pages as $page) {
             $log[] = "🔍 Page {$page->ID}: {$page->post_title}";
 
-            $catIds = PeepSoPageRepository::getCategoryIdsForPage((int) $page->ID);
-            if (!$catIds) {
-                $log[] = '  ⚠ No categories';
+            // Serialize with flushQueue / cascadeDelete — same lock key namespace
+            // as ShadowPageSyncService so all three writers of `_linked_cpts`
+            // are single-writer per page. Skipping on acquire-fail is safe:
+            // the next cron or admin-click picks the page up again.
+            $lockKey     = 'integrity_' . (int) $page->ID;
+            $lockAcquired = LockRepository::tryAcquire($lockKey, 30);
+            if (!$lockAcquired) {
+                $log[] = '  ⏭ Skipped (integrity lock held by concurrent writer)';
                 continue;
             }
 
-            $linked = [];
-            foreach ($catIds as $catId) {
-                if (!isset($map[(int) $catId]['cpt'])) {
+            try {
+                $catIds = PeepSoPageRepository::getCategoryIdsForPage((int) $page->ID);
+                if (!$catIds) {
+                    $log[] = '  ⚠ No categories';
                     continue;
                 }
-                $cpt = $map[(int) $catId]['cpt'];
 
-                $existing = get_posts([
-                    'post_type'      => $cpt,
-                    'meta_key'       => '_peepso_page_id',
-                    'meta_value'     => (string) $page->ID,
-                    'posts_per_page' => 1,
-                    'fields'         => 'ids',
-                    'no_found_rows'  => true,
-                ]);
-
-                if ($existing) {
-                    $cptId = (int) $existing[0];
-                    if (get_the_title($cptId) !== $page->post_title) {
-                        wp_update_post([
-                            'ID'         => $cptId,
-                            'post_title' => $page->post_title,
-                            'post_name'  => sanitize_title($page->post_title),
-                        ]);
-                        $log[] = "  🔧 Fixed title for {$cpt} ({$cptId})";
-                    }
-                } else {
-                    $cptId = AbstractPageType::create_from_page_by_type((int) $page->ID, $cpt);
-                    if (!$cptId) {
-                        $log[] = "  ❌ Failed creating {$cpt}";
+                $linked = [];
+                foreach ($catIds as $catId) {
+                    if (!isset($map[(int) $catId]['cpt'])) {
                         continue;
                     }
-                    update_post_meta($cptId, '_peepso_cat_id', (int) $catId);
-                    $log[] = "  ✅ Created {$cpt} ({$cptId})";
+                    $cpt = $map[(int) $catId]['cpt'];
+
+                    $existing = get_posts([
+                        'post_type'      => $cpt,
+                        'meta_key'       => '_peepso_page_id',
+                        'meta_value'     => (string) $page->ID,
+                        'posts_per_page' => 1,
+                        'fields'         => 'ids',
+                        'no_found_rows'  => true,
+                    ]);
+
+                    if ($existing) {
+                        $cptId = (int) $existing[0];
+                        if (get_the_title($cptId) !== $page->post_title) {
+                            wp_update_post([
+                                'ID'         => $cptId,
+                                'post_title' => $page->post_title,
+                                'post_name'  => sanitize_title($page->post_title),
+                            ]);
+                            $log[] = "  🔧 Fixed title for {$cpt} ({$cptId})";
+                        }
+                    } else {
+                        $cptId = AbstractPageType::create_from_page_by_type((int) $page->ID, $cpt);
+                        if (!$cptId) {
+                            $log[] = "  ❌ Failed creating {$cpt}";
+                            continue;
+                        }
+                        update_post_meta($cptId, '_peepso_cat_id', (int) $catId);
+                        $log[] = "  ✅ Created {$cpt} ({$cptId})";
+                    }
+
+                    update_post_meta($page->ID, '_linked_' . $cpt . '_id', $cptId);
+                    $linked[$cpt] = $cptId;
                 }
 
-                update_post_meta($page->ID, '_linked_' . $cpt . '_id', $cptId);
-                $linked[$cpt] = $cptId;
+                update_post_meta($page->ID, '_linked_cpts', $linked);
+                $log[] = '  ✔ Page repaired';
+                $log[] = '';
+            } finally {
+                LockRepository::release($lockKey);
             }
-
-            update_post_meta($page->ID, '_linked_cpts', $linked);
-            $log[] = '  ✔ Page repaired';
-            $log[] = '';
         }
 
         return $log;

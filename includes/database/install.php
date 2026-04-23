@@ -6,6 +6,11 @@ if (!defined('ABSPATH')) exit;
  *  BCC Database Installer
  *  Creates custom tables on plugin activation.
  *  Safe to call multiple times (uses dbDelta).
+ *
+ *  Relocated from includes/core/ to includes/database/ so the file
+ *  lives in the architecture-guardrail whitelist for raw $wpdb
+ *  access (schema files are an exempted exception; procedural
+ *  helpers in includes/core/ are not).
  * ======================================================
  */
 function bcc_create_tables(): void {

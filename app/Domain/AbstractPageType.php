@@ -484,21 +484,36 @@ abstract class AbstractPageType
         $page = get_post($page_id);
         if (!$page) return 0;
 
+        // Atomic insert: `_peepso_page_id` and `_bcc_visibility` are written
+        // via `meta_input` inside the same DB statement as the post INSERT.
+        // Prior code issued wp_insert_post + two follow-up update_post_meta
+        // calls: a failure between them left an orphan shadow with no
+        // backlink meta, which `pageNeedsRepair()` could not detect,
+        // leading to repeated create attempts and duplicate shadows.
         $id = wp_insert_post([
             'post_type'   => static::post_type(),
             'post_title'  => $page->post_title,
             'post_status' => 'publish',
-            'post_author' => (int) $page->post_author
+            'post_author' => (int) $page->post_author,
+            'meta_input'  => [
+                '_peepso_page_id' => $page_id,
+                '_bcc_visibility' => 'public',
+            ],
         ]);
 
         if (!$id) {
             return 0;
         }
 
-        update_post_meta($id, '_peepso_page_id', $page_id);
-        update_post_meta($page_id, '_linked_' . static::post_type() . '_id', $id);
+        // The page-side backlink must also land; if it fails, delete the
+        // just-inserted shadow to avoid leaving a half-linked pair.
+        $linkMeta = '_linked_' . static::post_type() . '_id';
+        $linkOk   = update_post_meta($page_id, $linkMeta, $id);
 
-        update_post_meta($id, '_bcc_visibility', 'public');
+        if ($linkOk === false) {
+            wp_delete_post((int) $id, true);
+            return 0;
+        }
 
         return (int) $id;
     }

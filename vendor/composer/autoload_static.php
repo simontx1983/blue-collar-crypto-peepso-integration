@@ -48,6 +48,7 @@ class ComposerStaticInit919a6277838ba16141192ac1ae0f7f55
         'BCC\\PeepSo\\Repositories\\GalleryRepository' => __DIR__ . '/../..' . '/app/Repositories/GalleryRepository.php',
         'BCC\\PeepSo\\Repositories\\LockRepository' => __DIR__ . '/../..' . '/app/Repositories/LockRepository.php',
         'BCC\\PeepSo\\Repositories\\PeepSoPageRepository' => __DIR__ . '/../..' . '/app/Repositories/PeepSoPageRepository.php',
+        'BCC\\PeepSo\\Repositories\\VisibilityRepository' => __DIR__ . '/../..' . '/app/Repositories/VisibilityRepository.php',
         'BCC\\PeepSo\\Security\\AjaxSecurity' => __DIR__ . '/../..' . '/app/Security/AjaxSecurity.php',
         'BCC\\PeepSo\\Services\\PageIntegrityService' => __DIR__ . '/../..' . '/app/Services/PageIntegrityService.php',
         'BCC\\PeepSo\\Services\\PageRepairService' => __DIR__ . '/../..' . '/app/Services/PageRepairService.php',

@@ -31,11 +31,38 @@ foreach ($cpt_types as $cpt) {
     } while (!empty($posts));
 }
 
-// 3. Remove all BCC post meta (_bcc_*, _linked_*_id, _linked_cpts, _peepso_page_id, _peepso_cat_id)
-$wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key >= '_bcc_' AND meta_key < '_bcc_~'");
-$wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key >= '_linked_' AND meta_key < '_linked_~'");
-$wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_peepso_page_id'");
-$wpdb->query("DELETE FROM {$wpdb->postmeta} WHERE meta_key = '_peepso_cat_id'");
+// 3. Remove post meta owned by THIS plugin only.
+//
+// CRITICAL: earlier versions deleted the ENTIRE `_bcc_*` and `_linked_*`
+// lexicographic ranges, which would wipe out sibling BCC plugins'
+// data (trust scores, wallet links, dispute flags, onchain bonuses)
+// the instant this plugin was uninstalled. The delete set is now
+// enumerated to only keys this plugin actually writes.
+$bcc_peepso_owned_meta = [
+    '_bcc_vis_version',
+    '_bcc_integrity_ok',
+    '_bcc_integrity_last_check',
+    '_linked_cpts',
+    '_linked_validators_id',
+    '_linked_nft_id',
+    '_linked_builder_id',
+    '_linked_dao_id',
+    '_peepso_page_id',
+    '_peepso_cat_id',
+];
+
+// Delete exact-match keys (safe, scoped).
+foreach ($bcc_peepso_owned_meta as $meta_key) {
+    $wpdb->delete($wpdb->postmeta, ['meta_key' => $meta_key], ['%s']);
+}
+
+// Per-field visibility keys (`_bcc_vis_<field>`) — narrow LIKE with
+// esc_like() so only this plugin's visibility rows are removed.
+$vis_like = $wpdb->esc_like('_bcc_vis_') . '%';
+$wpdb->query($wpdb->prepare(
+    "DELETE FROM {$wpdb->postmeta} WHERE meta_key LIKE %s",
+    $vis_like
+));
 
 // 4. Delete uploaded gallery files (including subdirectories)
 $upload_dir  = wp_upload_dir();

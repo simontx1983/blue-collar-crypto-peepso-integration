@@ -21,6 +21,7 @@ return array(
     'BCC\\PeepSo\\Repositories\\GalleryRepository' => $baseDir . '/app/Repositories/GalleryRepository.php',
     'BCC\\PeepSo\\Repositories\\LockRepository' => $baseDir . '/app/Repositories/LockRepository.php',
     'BCC\\PeepSo\\Repositories\\PeepSoPageRepository' => $baseDir . '/app/Repositories/PeepSoPageRepository.php',
+    'BCC\\PeepSo\\Repositories\\VisibilityRepository' => $baseDir . '/app/Repositories/VisibilityRepository.php',
     'BCC\\PeepSo\\Security\\AjaxSecurity' => $baseDir . '/app/Security/AjaxSecurity.php',
     'BCC\\PeepSo\\Services\\PageIntegrityService' => $baseDir . '/app/Services/PageIntegrityService.php',
     'BCC\\PeepSo\\Services\\PageRepairService' => $baseDir . '/app/Services/PageRepairService.php',

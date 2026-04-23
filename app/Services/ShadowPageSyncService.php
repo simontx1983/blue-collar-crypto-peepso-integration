@@ -153,54 +153,67 @@ final class ShadowPageSyncService
         $map = bcc_get_category_map();
 
         foreach (self::$pending as $pageId => $data) {
-            $rows = PeepSoPageRepository::getCategoryRowsForPage((int) $pageId);
-            if (empty($rows)) {
+            // Serialize across flushQueue / cascadeDelete / PageRepairService::repair
+            // so the three writers of `_linked_cpts` cannot clobber each other.
+            // Lock key matches autoCreateOnPageLoad's so the entire shadow-CPT
+            // integrity namespace for this page is single-writer.
+            $lockKey = 'integrity_' . $pageId;
+            if (!LockRepository::tryAcquire($lockKey, self::LOCK_TTL)) {
                 continue;
             }
 
-            $targets = [];
-            foreach ($rows as $row) {
-                $catId = (int) $row->cat_id;
-                if (!isset($map[$catId]['cpt'])) {
-                    continue;
-                }
-                $targets[$map[$catId]['cpt']] = $catId;
-            }
-
-            if (empty($targets)) {
-                continue;
-            }
-
-            $linked = [];
-            foreach ($targets as $postType => $catId) {
-                if (!post_type_exists($postType)) {
+            try {
+                $rows = PeepSoPageRepository::getCategoryRowsForPage((int) $pageId);
+                if (empty($rows)) {
                     continue;
                 }
 
-                $existing = get_post_meta($pageId, '_linked_' . $postType . '_id', true);
-
-                if ($existing && get_post($existing)) {
-                    if (get_the_title($existing) !== $data['title']) {
-                        wp_update_post([
-                            'ID'         => $existing,
-                            'post_title' => $data['title'],
-                            'post_name'  => sanitize_title($data['title']),
-                        ]);
+                $targets = [];
+                foreach ($rows as $row) {
+                    $catId = (int) $row->cat_id;
+                    if (!isset($map[$catId]['cpt'])) {
+                        continue;
                     }
-                    $linked[$postType] = (int) $existing;
+                    $targets[$map[$catId]['cpt']] = $catId;
+                }
+
+                if (empty($targets)) {
                     continue;
                 }
 
-                $cptId = AbstractPageType::create_from_page_by_type((int) $pageId, $postType);
-                if (!$cptId) {
-                    continue;
+                $linked = [];
+                foreach ($targets as $postType => $catId) {
+                    if (!post_type_exists($postType)) {
+                        continue;
+                    }
+
+                    $existing = get_post_meta($pageId, '_linked_' . $postType . '_id', true);
+
+                    if ($existing && get_post($existing)) {
+                        if (get_the_title($existing) !== $data['title']) {
+                            wp_update_post([
+                                'ID'         => $existing,
+                                'post_title' => $data['title'],
+                                'post_name'  => sanitize_title($data['title']),
+                            ]);
+                        }
+                        $linked[$postType] = (int) $existing;
+                        continue;
+                    }
+
+                    $cptId = AbstractPageType::create_from_page_by_type((int) $pageId, $postType);
+                    if (!$cptId) {
+                        continue;
+                    }
+
+                    update_post_meta($cptId, '_peepso_cat_id', (int) $catId);
+                    $linked[$postType] = (int) $cptId;
                 }
 
-                update_post_meta($cptId, '_peepso_cat_id', (int) $catId);
-                $linked[$postType] = (int) $cptId;
+                update_post_meta($pageId, '_linked_cpts', $linked);
+            } finally {
+                LockRepository::release($lockKey);
             }
-
-            update_post_meta($pageId, '_linked_cpts', $linked);
         }
 
         self::$pending = [];
@@ -243,24 +256,74 @@ final class ShadowPageSyncService
             return;
         }
 
-        $linked = get_post_meta($postId, '_linked_cpts', true);
-        if (!is_array($linked)) {
-            return;
-        }
+        $pageId = (int) $postId;
 
-        foreach ($linked as $cptId) {
-            $cptId = (int) $cptId;
-            if (!$cptId || !get_post($cptId)) {
-                continue;
+        // Acquire the shared integrity lock so cascadeDelete cannot race
+        // with flushQueue / PageRepairService::repair writing `_linked_cpts`
+        // while we are reading it. If we cannot acquire, fall through to a
+        // direct meta scan below — missing orphans is worse than waiting.
+        $lockKey     = 'integrity_' . $pageId;
+        $lockAcquired = LockRepository::tryAcquire($lockKey, self::LOCK_TTL);
+
+        try {
+            // Authoritative source: scan every known shadow CPT type for
+            // posts whose `_peepso_page_id` meta equals our page id. This
+            // is resilient to a drifted `_linked_cpts` aggregate that could
+            // omit a shadow created between a prior flushQueue and this
+            // delete — such omissions previously turned those shadows (and
+            // their gallery rows) into permanent orphans.
+            $shadowTypes = function_exists('bcc_get_shadow_cpt_types')
+                ? bcc_get_shadow_cpt_types()
+                : ['validators', 'nft', 'builder', 'dao'];
+
+            $shadowIds = [];
+            foreach ($shadowTypes as $cpt) {
+                if (!post_type_exists($cpt)) {
+                    continue;
+                }
+                $found = get_posts([
+                    'post_type'      => $cpt,
+                    'post_status'    => 'any',
+                    'meta_key'       => '_peepso_page_id',
+                    'meta_value'     => (string) $pageId,
+                    'posts_per_page' => -1,
+                    'fields'         => 'ids',
+                    'no_found_rows'  => true,
+                ]);
+                foreach ($found as $id) {
+                    $shadowIds[] = (int) $id;
+                }
             }
 
-            if (class_exists(GalleryRepository::class)) {
-                GalleryRepository::deleteByPostId($cptId);
+            // Belt-and-suspenders: also include anything the cached
+            // aggregate knew about, in case the meta scan missed a row
+            // (e.g. the shadow was trashed and the meta_value stored as
+            // int-string vs string mismatches).
+            $linked = get_post_meta($postId, '_linked_cpts', true);
+            if (is_array($linked)) {
+                foreach ($linked as $cptId) {
+                    $shadowIds[] = (int) $cptId;
+                }
+            }
+            $shadowIds = array_values(array_unique(array_filter($shadowIds)));
+
+            foreach ($shadowIds as $cptId) {
+                if (!get_post($cptId)) {
+                    continue;
+                }
+
+                if (class_exists(GalleryRepository::class)) {
+                    GalleryRepository::deleteByPostId($cptId);
+                }
+
+                wp_trash_post($cptId);
             }
 
-            wp_trash_post($cptId);
+            delete_post_meta($postId, '_linked_cpts');
+        } finally {
+            if ($lockAcquired) {
+                LockRepository::release($lockKey);
+            }
         }
-
-        delete_post_meta($postId, '_linked_cpts');
     }
 }

@@ -34,7 +34,7 @@ if (file_exists($bcc_peepso_autoloader)) {
  * ==========================================================
  */
 register_activation_hook(__FILE__, function () {
-    require_once BCC_PEEPSO_INCLUDES_PATH . 'core/install.php';
+    require_once BCC_PEEPSO_INCLUDES_PATH . 'database/install.php';
     bcc_create_tables();
 });
 

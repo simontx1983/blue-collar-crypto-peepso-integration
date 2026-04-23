@@ -69,6 +69,23 @@ class GalleryController
 
     private static function canEditOrFail(int $post_id): void
     {
+        // Post-type whitelist — the gallery is only meaningful on shadow
+        // CPTs created by this plugin. Without this gate, any user who
+        // "owns" an arbitrary peepso-page (or any post_author match)
+        // could anchor a gallery to that post: storage-quota abuse,
+        // data-pollution, and gallery rows referencing posts that no
+        // gallery UI ever renders.
+        $post = get_post($post_id);
+        if (!$post) {
+            wp_send_json_error(['message' => 'Post not found.'], 404);
+        }
+        $shadowTypes = function_exists('bcc_get_shadow_cpt_types')
+            ? bcc_get_shadow_cpt_types()
+            : ['validators', 'nft', 'builder', 'dao'];
+        if (!in_array($post->post_type, $shadowTypes, true)) {
+            wp_send_json_error(['message' => 'Galleries are only supported on shadow CPTs.'], 400);
+        }
+
         AjaxSecurity::require_edit_permission($post_id);
     }
 
@@ -174,14 +191,26 @@ class GalleryController
                 continue;
             }
 
-            $ext  = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-
-            if (preg_match('/ph(p|tml|ar)/i', $ext)) {
+            // Derive the stored extension from the confirmed MIME, NOT
+            // from the attacker-controlled filename. Extension blacklist
+            // (.php/.phtml/.phar) is brittle: .pht, .shtml, .html, and
+            // polyglot SVGs slip through and Nginx hosts (ignoring
+            // .htaccess) would then serve them with attacker-chosen
+            // Content-Type. This allowlist maps each accepted MIME to
+            // exactly one safe extension.
+            $mime_to_ext = [
+                'image/jpeg' => 'jpg',
+                'image/png'  => 'png',
+                'image/gif'  => 'gif',
+                'image/webp' => 'webp',
+            ];
+            $ext = $mime_to_ext[$detected_mime] ?? null;
+            if ($ext === null) {
                 continue;
             }
 
             $safe = sanitize_file_name(pathinfo($name, PATHINFO_FILENAME));
-            $file = $safe . '-' . uniqid('', true) . ($ext ? '.' . $ext : '');
+            $file = $safe . '-' . uniqid('', true) . '.' . $ext;
 
             $path = $base_dir . $file;
             $url  = $base_url . $file;
@@ -454,6 +483,25 @@ class GalleryController
             wp_send_json_error(['message' => 'Invalid field']);
         }
 
+        // Serialize concurrent repeater-row mutations on the same field
+        // with an advisory lock. Two simultaneous deletes of DIFFERENT
+        // rows previously raced: both read the field, each spliced one
+        // row, each wrote back — the second write clobbered the first
+        // deletion, making a row "reappear" after page refresh. Lock
+        // scope is per (post_id, field) so unrelated fields stay
+        // parallel.
+        $lockKey     = 'bcc_repeater_' . $post_id . '_' . md5($field);
+        $lockAcquired = false;
+        if (class_exists('\\BCC\\Core\\DB\\AdvisoryLock')) {
+            $lockAcquired = \BCC\Core\DB\AdvisoryLock::acquire($lockKey, 5);
+            if (!$lockAcquired) {
+                wp_send_json_error([
+                    'message' => 'Another repeater edit is in progress — please retry.',
+                ], 409);
+            }
+        }
+
+        try {
         $rows = get_field($field, $post_id);
 
         if (!is_array($rows)) {
@@ -474,6 +522,11 @@ class GalleryController
             }
         } else {
             wp_send_json_error(['message' => 'Row not found at index ' . $row]);
+        }
+        } finally {
+            if ($lockAcquired && class_exists('\\BCC\\Core\\DB\\AdvisoryLock')) {
+                \BCC\Core\DB\AdvisoryLock::release($lockKey);
+            }
         }
     }
 
