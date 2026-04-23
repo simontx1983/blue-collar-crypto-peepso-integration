@@ -41,10 +41,10 @@ function bcc_render_trust_header_panel( int $page_id, string $mode ) {
 
     if ( isset( $flag_cache[ $cache_key ] ) ) {
         [ $flag_count, $viewer_flagged ] = $flag_cache[ $cache_key ];
-    } elseif ( class_exists( '\\BCC\\Trust\\Services\\FlagService' ) ) {
-        $flag_count = \BCC\Trust\Services\FlagService::getFlagCount( $page_id );
+    } elseif ( class_exists( '\\BCC\\Trust\\Core\\Services\\FlagService' ) ) {
+        $flag_count = \BCC\Trust\Core\Services\FlagService::getFlagCount( $page_id );
         if ( $viewer_id > 0 ) {
-            $viewer_flagged = \BCC\Trust\Services\FlagService::hasUserFlagged( $page_id, $viewer_id );
+            $viewer_flagged = \BCC\Trust\Core\Services\FlagService::hasUserFlagged( $page_id, $viewer_id );
         }
         $flag_cache[ $cache_key ] = [ $flag_count, $viewer_flagged ];
     }
