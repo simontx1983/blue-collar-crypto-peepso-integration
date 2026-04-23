@@ -27,6 +27,9 @@ final class PageRepairService
     private const POST_ACTION   = 'bcc_peepso_rebuild_shadows';
     private const NONCE_ACTION  = 'bcc_peepso_rebuild_shadows';
     private const RESULTS_TRANSIENT = 'bcc_trust_repair_results';
+    private const BATCH_HOOK     = 'bcc_peepso_repair_batch';
+    private const JOB_TRANSIENT  = 'bcc_peepso_repair_job_';
+    private const JOB_TTL        = 3600;
 
     public static function register(): void
     {
@@ -34,6 +37,7 @@ final class PageRepairService
         add_action('admin_post_' . self::POST_ACTION, [self::class, 'handleRepairPost']);
         add_action('init', [self::class, 'scheduleCron']);
         add_action(self::CRON_HOOK, [self::class, 'runReconcileCron']);
+        add_action(self::BATCH_HOOK, [self::class, 'runBatch'], 10, 1);
     }
 
     /**
@@ -47,16 +51,27 @@ final class PageRepairService
         }
 
         $post_url = esc_url(admin_url('admin-post.php'));
+        $running  = self::getRunningJob();
         ?>
         <div style="border:1px solid #ddd;border-radius:6px;padding:16px;">
             <h3 style="margin-top:0;">Rebuild Shadow CPTs</h3>
-            <p style="font-size:13px;color:#666;">Scans every PeepSo page and creates any missing shadow CPT (validators / builder / nft / dao), repairing drifted titles along the way.</p>
+            <p style="font-size:13px;color:#666;">Scans every PeepSo page and creates any missing shadow CPT (validators / builder / nft / dao), repairing drifted titles along the way. Runs asynchronously in batches — safe to leave the page.</p>
+            <?php if ($running !== null) : ?>
+                <p style="font-size:13px;color:#0073aa;">
+                    ⚙️ Job in progress:
+                    <strong><?php echo (int) $running['scanned']; ?></strong> pages scanned,
+                    <strong><?php echo (int) $running['created']; ?></strong> shadows created,
+                    <strong><?php echo (int) $running['titles_fixed']; ?></strong> titles fixed.
+                    Refresh to update.
+                </p>
+            <?php endif; ?>
             <form method="post" action="<?php echo $post_url; ?>">
                 <?php wp_nonce_field(self::NONCE_ACTION); ?>
                 <input type="hidden" name="action" value="<?php echo esc_attr(self::POST_ACTION); ?>">
                 <button type="submit" class="button button-primary"
+                        <?php echo $running !== null ? 'disabled' : ''; ?>
                         onclick="return confirm('Rebuild shadow CPTs for all PeepSo pages?');">
-                    Rebuild Shadows
+                    <?php echo $running !== null ? 'Running…' : 'Rebuild Shadows'; ?>
                 </button>
             </form>
         </div>
@@ -64,8 +79,13 @@ final class PageRepairService
     }
 
     /**
-     * Admin-post handler: runs the full repair, stores a rich result dict
-     * in the shared transient, and redirects back to the repair tab.
+     * Admin-post handler: queues an asynchronous repair job and redirects
+     * back to the repair tab. The previous synchronous implementation
+     * iterated every peepso-page under one admin request and timed out on
+     * larger sites (~3k+ pages) under default PHP max_execution_time.
+     *
+     * Work happens in {@see self::runBatch()}, invoked via
+     * wp_schedule_single_event so the HTTP response returns immediately.
      */
     public static function handleRepairPost(): void
     {
@@ -74,34 +94,176 @@ final class PageRepairService
         }
         check_admin_referer(self::NONCE_ACTION);
 
-        $log = self::repair(null, true);
-
-        $results = [
-            'action'  => 'peepso_rebuild_shadows',
-            'details' => $log,
-        ];
-        if (isset($log['error'])) {
-            $results['error']   = $log['error'];
-            $results['details'] = [];
-        } else {
-            $results['pages_scanned'] = count(array_filter(
-                $log,
-                static fn($line) => str_starts_with($line, '🔍')
-            ));
-            $results['shadows_created'] = count(array_filter(
-                $log,
-                static fn($line) => str_contains($line, '✅ Created')
-            ));
-            $results['titles_fixed'] = count(array_filter(
-                $log,
-                static fn($line) => str_contains($line, '🔧 Fixed title')
-            ));
+        // Preflight: if required dependencies are missing, surface the
+        // error synchronously so the admin sees it immediately rather
+        // than waiting for a batch that can never run.
+        if (!function_exists('bcc_get_category_map')) {
+            set_transient(self::RESULTS_TRANSIENT, [
+                'action' => 'peepso_rebuild_shadows',
+                'error'  => 'bcc_get_category_map() missing',
+            ], 120);
+            wp_safe_redirect(admin_url('admin.php?page=bcc-trust-dashboard&tab=repair'));
+            exit;
+        }
+        if (!PeepSoPageRepository::tableExists()) {
+            set_transient(self::RESULTS_TRANSIENT, [
+                'action' => 'peepso_rebuild_shadows',
+                'error'  => 'PeepSo Pages relation table not found. Is the PeepSo Pages plugin active?',
+            ], 120);
+            wp_safe_redirect(admin_url('admin.php?page=bcc-trust-dashboard&tab=repair'));
+            exit;
         }
 
-        set_transient(self::RESULTS_TRANSIENT, $results, 120);
+        // If a job is already running, do not start a second one — reuse
+        // the existing job id so the UI continues to poll the same record.
+        $existing = self::getRunningJob();
+        if ($existing !== null) {
+            wp_safe_redirect(admin_url('admin.php?page=bcc-trust-dashboard&tab=repair'));
+            exit;
+        }
+
+        try {
+            $jobId = bin2hex(random_bytes(8));
+        } catch (\Throwable $e) {
+            $jobId = 'j' . (string) mt_rand() . (string) time();
+        }
+
+        set_transient(self::JOB_TRANSIENT . $jobId, [
+            'status'       => 'running',
+            'offset'       => 0,
+            'scanned'      => 0,
+            'created'      => 0,
+            'titles_fixed' => 0,
+            'errors'       => [],
+            'started_at'   => time(),
+        ], self::JOB_TTL);
+
+        set_transient(self::RESULTS_TRANSIENT, [
+            'action' => 'peepso_rebuild_shadows',
+            'queued' => true,
+            'job_id' => $jobId,
+        ], 300);
+
+        wp_schedule_single_event(time() + 1, self::BATCH_HOOK, [$jobId]);
 
         wp_safe_redirect(admin_url('admin.php?page=bcc-trust-dashboard&tab=repair'));
         exit;
+    }
+
+    /**
+     * Process one batch of the repair job, then either reschedule for
+     * the next batch or mark the job complete. Idempotent — if the
+     * transient is gone (TTL expired, explicit cancel) the batch is a
+     * no-op so a delayed cron re-fire cannot resurrect a cancelled job.
+     *
+     * @param string $jobId
+     */
+    public static function runBatch($jobId): void
+    {
+        if (!is_string($jobId) || $jobId === '') {
+            return;
+        }
+
+        $key = self::JOB_TRANSIENT . $jobId;
+        $job = get_transient($key);
+        if (!is_array($job) || ($job['status'] ?? '') !== 'running') {
+            return;
+        }
+
+        if (!function_exists('bcc_get_category_map') || !PeepSoPageRepository::tableExists()) {
+            $job['status']       = 'error';
+            $job['error']        = 'Dependencies missing at batch execution time';
+            $job['completed_at'] = time();
+            set_transient($key, $job, self::JOB_TTL);
+            return;
+        }
+
+        $offset = (int) ($job['offset'] ?? 0);
+        $pages  = get_posts([
+            'post_type'      => 'peepso-page',
+            'posts_per_page' => self::BATCH_SIZE,
+            'offset'         => $offset,
+            'post_status'    => 'publish',
+            'no_found_rows'  => true,
+            'orderby'        => 'ID',
+            'order'          => 'ASC',
+        ]);
+
+        foreach ($pages as $page) {
+            $log = self::repair((int) $page->ID, true);
+            if (isset($log['error'])) {
+                $job['errors'][] = 'Page ' . (int) $page->ID . ': ' . $log['error'];
+                $job['scanned']++;
+                continue;
+            }
+            /** @var array<int, string> $log */
+            $job['scanned']++;
+            foreach ($log as $line) {
+                if (!is_string($line)) {
+                    continue;
+                }
+                if (str_contains($line, '✅ Created')) {
+                    $job['created']++;
+                } elseif (str_contains($line, '🔧 Fixed title')) {
+                    $job['titles_fixed']++;
+                }
+            }
+        }
+
+        $job['offset'] = $offset + self::BATCH_SIZE;
+
+        if (count($pages) === self::BATCH_SIZE) {
+            set_transient($key, $job, self::JOB_TTL);
+            wp_schedule_single_event(time() + 1, self::BATCH_HOOK, [$jobId]);
+            return;
+        }
+
+        // No more pages — finalize.
+        $job['status']       = 'complete';
+        $job['completed_at'] = time();
+        set_transient($key, $job, self::JOB_TTL);
+
+        set_transient(self::RESULTS_TRANSIENT, [
+            'action'          => 'peepso_rebuild_shadows',
+            'pages_scanned'   => (int) $job['scanned'],
+            'shadows_created' => (int) $job['created'],
+            'titles_fixed'    => (int) $job['titles_fixed'],
+            'errors'          => $job['errors'],
+            'completed_at'    => $job['completed_at'],
+        ], 600);
+
+        if (class_exists('\\BCC\\Core\\Log\\Logger')) {
+            \BCC\Core\Log\Logger::info('[bcc-peepso] repair job complete', [
+                'job_id'        => $jobId,
+                'scanned'       => (int) $job['scanned'],
+                'created'       => (int) $job['created'],
+                'titles_fixed'  => (int) $job['titles_fixed'],
+                'error_count'   => count($job['errors']),
+                'duration_s'    => $job['completed_at'] - (int) $job['started_at'],
+            ]);
+        }
+    }
+
+    /**
+     * Return the currently-running job record if the queued job id in
+     * the results transient maps to a transient still marked running.
+     * Used by {@see self::renderRepairTile()} and by handleRepairPost()
+     * to prevent double-queues.
+     *
+     * @return array{status: string, offset: int, scanned: int, created: int, titles_fixed: int, errors: list<string>, started_at: int}|null
+     */
+    private static function getRunningJob(): ?array
+    {
+        $results = get_transient(self::RESULTS_TRANSIENT);
+        if (!is_array($results) || empty($results['job_id']) || !is_string($results['job_id'])) {
+            return null;
+        }
+        $job = get_transient(self::JOB_TRANSIENT . $results['job_id']);
+        if (!is_array($job) || ($job['status'] ?? '') !== 'running') {
+            return null;
+        }
+        /** @var array{status: string, offset: int, scanned: int, created: int, titles_fixed: int, errors: list<string>, started_at: int} $job */
+        return $job;
     }
 
     public static function scheduleCron(): void
@@ -174,10 +336,18 @@ final class PageRepairService
                     }
                     $cpt = $map[(int) $catId]['cpt'];
 
+                    // NUMERIC meta compare so repair doesn't miss a
+                    // shadow whose _peepso_page_id was written as an int
+                    // rather than a string — a miss here would trigger a
+                    // spurious create, producing a duplicate shadow.
                     $existing = get_posts([
                         'post_type'      => $cpt,
-                        'meta_key'       => '_peepso_page_id',
-                        'meta_value'     => (string) $page->ID,
+                        'meta_query'     => [[
+                            'key'     => '_peepso_page_id',
+                            'value'   => (int) $page->ID,
+                            'compare' => '=',
+                            'type'    => 'NUMERIC',
+                        ]],
                         'posts_per_page' => 1,
                         'fields'         => 'ids',
                         'no_found_rows'  => true,

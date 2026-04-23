@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
 
 use BCC\PeepSo\Repositories\GalleryRepository;
 use BCC\PeepSo\Security\AjaxSecurity;
+use BCC\PeepSo\Security\FieldLock;
 use BCC\PeepSo\Domain\AbstractPageType;
 use BCC\Core\Security\Throttle;
 use BCC\Core\Log\Logger;
@@ -137,11 +138,38 @@ class GalleryController
         $base_dir   = trailingslashit($upload_dir['basedir']) . 'bcc-gallery/';
         $base_url   = set_url_scheme(trailingslashit($upload_dir['baseurl']) . 'bcc-gallery/');
 
-        if (!file_exists($base_dir)) {
-            wp_mkdir_p($base_dir);
-            // Prevent direct PHP execution in the upload directory.
-            @file_put_contents($base_dir . 'index.php', '<?php // Silence is golden.');
-            @file_put_contents($base_dir . '.htaccess', "Options -ExecCGI\n<FilesMatch \"\\.php$\">\nDeny from all\n</FilesMatch>\n");
+        // Upload-dir guard files. An error-suppressed @file_put_contents
+        // used to quietly fail here — if that happened, the directory
+        // stayed unprotected and a polyglot upload could be served as
+        // executable PHP. Refuse the upload (fail-closed) and log when
+        // a guard is missing and cannot be written.
+        if (!file_exists($base_dir) && !wp_mkdir_p($base_dir)) {
+            Logger::error('[bcc-peepso] gallery upload dir missing and unwritable', [
+                'dir' => $base_dir,
+            ]);
+            wp_send_json_error(['message' => 'Upload storage unavailable.']);
+        }
+
+        $guards = [
+            'index.php' => '<?php // Silence is golden.',
+            '.htaccess' => "Options -ExecCGI\n<FilesMatch \"\\.php$\">\nDeny from all\n</FilesMatch>\n",
+        ];
+        foreach ($guards as $name => $contents) {
+            $path = $base_dir . $name;
+            if (file_exists($path)) {
+                continue;
+            }
+            // Concurrent requests may race to create the same guard;
+            // a file_put_contents return of false while the file now
+            // exists (peer won) is fine. Only a true failure — file
+            // missing AND write returned false — is a deploy-blocker.
+            $written = file_put_contents($path, $contents);
+            if ($written === false && !file_exists($path)) {
+                Logger::error('[bcc-peepso] upload-dir guard write failed', [
+                    'file' => $path,
+                ]);
+                wp_send_json_error(['message' => 'Upload storage misconfigured.']);
+            }
         }
 
         $allowed_mimes = [
@@ -484,49 +512,40 @@ class GalleryController
         }
 
         // Serialize concurrent repeater-row mutations on the same field
-        // with an advisory lock. Two simultaneous deletes of DIFFERENT
-        // rows previously raced: both read the field, each spliced one
-        // row, each wrote back — the second write clobbered the first
-        // deletion, making a row "reappear" after page refresh. Lock
-        // scope is per (post_id, field) so unrelated fields stay
-        // parallel.
-        $lockKey     = 'bcc_repeater_' . $post_id . '_' . md5($field);
-        $lockAcquired = false;
-        if (class_exists('\\BCC\\Core\\DB\\AdvisoryLock')) {
-            $lockAcquired = \BCC\Core\DB\AdvisoryLock::acquire($lockKey, 5);
-            if (!$lockAcquired) {
-                wp_send_json_error([
-                    'message' => 'Another repeater edit is in progress — please retry.',
-                ], 409);
-            }
+        // with an advisory lock. All repeater read-modify-write paths
+        // (add_new, per-row update, reorder, delete) share this lock so
+        // none of them can clobber each other's writes.
+        $lockKey = FieldLock::acquire($post_id, $field);
+        if ($lockKey === null) {
+            wp_send_json_error([
+                'message' => 'Another repeater edit is in progress — please retry.',
+            ], 409);
         }
 
         try {
-        $rows = get_field($field, $post_id);
+            $rows = get_field($field, $post_id);
 
-        if (!is_array($rows)) {
-            wp_send_json_error(['message' => 'No rows found']);
-        }
+            if (!is_array($rows)) {
+                wp_send_json_error(['message' => 'No rows found']);
+            }
 
-        if (isset($rows[$row])) {
-            array_splice($rows, $row, 1);
-            $updated = update_field($field, $rows, $post_id);
+            if (isset($rows[$row])) {
+                array_splice($rows, $row, 1);
+                $updated = update_field($field, $rows, $post_id);
 
-            if ($updated) {
-                wp_send_json_success([
-                    'message' => 'Row deleted',
-                    'rows' => count($rows)
-                ]);
+                if ($updated) {
+                    wp_send_json_success([
+                        'message' => 'Row deleted',
+                        'rows' => count($rows)
+                    ]);
+                } else {
+                    wp_send_json_error(['message' => 'Failed to update field']);
+                }
             } else {
-                wp_send_json_error(['message' => 'Failed to update field']);
+                wp_send_json_error(['message' => 'Row not found at index ' . $row]);
             }
-        } else {
-            wp_send_json_error(['message' => 'Row not found at index ' . $row]);
-        }
         } finally {
-            if ($lockAcquired && class_exists('\\BCC\\Core\\DB\\AdvisoryLock')) {
-                \BCC\Core\DB\AdvisoryLock::release($lockKey);
-            }
+            FieldLock::release($lockKey);
         }
     }
 
@@ -566,29 +585,45 @@ class GalleryController
             wp_send_json_error(['message' => 'Invalid field']);
         }
 
-        $rows = get_field($field, $post_id);
-
-        if (!is_array($rows)) {
-            wp_send_json_error(['message' => 'No rows found']);
+        // Share the lock with delete_repeater_row / InlineEditController's
+        // repeater paths. Without this, a concurrent delete + reorder
+        // races: reorder reads pre-delete rows, the delete commits, then
+        // reorder writes the stale pre-delete array back — silently
+        // resurrecting the deleted row.
+        $lockKey = FieldLock::acquire($post_id, $field);
+        if ($lockKey === null) {
+            wp_send_json_error([
+                'message' => 'Another repeater edit is in progress — please retry.',
+            ], 409);
         }
 
-        $reordered_rows = [];
-        foreach ($order as $old_index) {
-            if (isset($rows[$old_index])) {
-                $reordered_rows[] = $rows[$old_index];
+        try {
+            $rows = get_field($field, $post_id);
+
+            if (!is_array($rows)) {
+                wp_send_json_error(['message' => 'No rows found']);
             }
-        }
 
-        if (count($reordered_rows) === count($rows)) {
-            $updated = update_field($field, $reordered_rows, $post_id);
+            $reordered_rows = [];
+            foreach ($order as $old_index) {
+                if (isset($rows[$old_index])) {
+                    $reordered_rows[] = $rows[$old_index];
+                }
+            }
 
-            if ($updated) {
-                wp_send_json_success(['message' => 'Rows reordered']);
+            if (count($reordered_rows) === count($rows)) {
+                $updated = update_field($field, $reordered_rows, $post_id);
+
+                if ($updated) {
+                    wp_send_json_success(['message' => 'Rows reordered']);
+                } else {
+                    wp_send_json_error(['message' => 'Failed to update field']);
+                }
             } else {
-                wp_send_json_error(['message' => 'Failed to update field']);
+                wp_send_json_error(['message' => 'Invalid order data']);
             }
-        } else {
-            wp_send_json_error(['message' => 'Invalid order data']);
+        } finally {
+            FieldLock::release($lockKey);
         }
     }
 

@@ -8,6 +8,7 @@ if (!defined('ABSPATH')) {
 
 use BCC\PeepSo\Domain\AbstractPageType;
 use BCC\PeepSo\Security\AjaxSecurity;
+use BCC\PeepSo\Security\FieldLock;
 use BCC\Core\Security\Throttle;
 use BCC\Core\Log\Logger;
 
@@ -106,17 +107,31 @@ class InlineEditController
         }
 
         if ($repeater && $sub === 'add_new') {
-            $rows = get_field($field, $post_id);
-            if (!is_array($rows)) {
-                $rows = [];
+            // Shared lock with GalleryController's delete/reorder and the
+            // repeater_update branch below. Without it, concurrent
+            // add_new + delete / add_new + add_new races via ACF's
+            // read-modify-write pattern silently drop or resurrect rows.
+            $lockKey = FieldLock::acquire($post_id, $field);
+            if ($lockKey === null) {
+                wp_send_json_error([
+                    'message' => 'Another repeater edit is in progress — please retry.',
+                ], 409);
             }
-            $rows[] = [];
-            self::auditEdit($post_id, $field, 'repeater_add', count($rows));
-            update_field($field, $rows, $post_id);
-            wp_send_json_success([
-                'message' => 'New item added',
-                'rows'    => count($rows)
-            ]);
+            try {
+                $rows = get_field($field, $post_id);
+                if (!is_array($rows)) {
+                    $rows = [];
+                }
+                $rows[] = [];
+                self::auditEdit($post_id, $field, 'repeater_add', count($rows));
+                update_field($field, $rows, $post_id);
+                wp_send_json_success([
+                    'message' => 'New item added',
+                    'rows'    => count($rows)
+                ]);
+            } finally {
+                FieldLock::release($lockKey);
+            }
         }
 
         if ($type === 'gallery') {
@@ -128,6 +143,9 @@ class InlineEditController
         }
 
         if (!$repeater) {
+            // Non-repeater path: single post_meta write is atomic at the
+            // UPDATE-statement level. Last-writer-wins is acceptable
+            // here — there's no read-modify-write window.
             self::auditEdit($post_id, $field, 'update', $value);
             update_field($field, $value, $post_id);
             wp_send_json_success([
@@ -139,20 +157,33 @@ class InlineEditController
             wp_send_json_error('Missing sub field');
         }
 
-        $rows = get_field($field, $post_id);
-        if (!is_array($rows)) {
-            $rows = [];
+        // Repeater per-row update: read-modify-write on the rows array.
+        // Must hold the same lock as add_new / delete / reorder, or a
+        // concurrent mutation silently overwrites this write.
+        $lockKey = FieldLock::acquire($post_id, $field);
+        if ($lockKey === null) {
+            wp_send_json_error([
+                'message' => 'Another repeater edit is in progress — please retry.',
+            ], 409);
         }
-        if (!isset($rows[$row])) {
-            $rows[$row] = [];
+        try {
+            $rows = get_field($field, $post_id);
+            if (!is_array($rows)) {
+                $rows = [];
+            }
+            if (!isset($rows[$row])) {
+                $rows[$row] = [];
+            }
+
+            $rows[$row][$sub] = $value;
+            self::auditEdit($post_id, $field, 'repeater_update', $value, $sub);
+            update_field($field, $rows, $post_id);
+
+            wp_send_json_success([
+                'value' => $value
+            ]);
+        } finally {
+            FieldLock::release($lockKey);
         }
-
-        $rows[$row][$sub] = $value;
-        self::auditEdit($post_id, $field, 'repeater_update', $value, $sub);
-        update_field($field, $rows, $post_id);
-
-        wp_send_json_success([
-            'value' => $value
-        ]);
     }
 }

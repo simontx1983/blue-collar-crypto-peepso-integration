@@ -34,7 +34,26 @@ final class ShadowPageSyncService
         add_action('save_post_peepso-page', [self::class, 'queueOnSave'], 10, 3);
         add_action('shutdown', [self::class, 'flushQueue']);
         add_action('save_post', [self::class, 'preventDuplicate'], 10, 2);
+
+        // Lifecycle: shadow CPTs + gallery rows must follow the source
+        // PeepSo page through both trash (reversible) and permanent delete
+        // (irreversible). The prior registration hooked ONLY
+        // before_delete_post, which fires on permanent delete — leaving
+        // shadow CPTs visible for the entire trash window (up to
+        // EMPTY_TRASH_DAYS) even though their source page was "deleted"
+        // from the UI. cascadeTrash handles the trash transition and
+        // defers gallery-row cleanup to cascadeDelete on permanent delete.
+        add_action('wp_trash_post', [self::class, 'cascadeTrash'], 10);
         add_action('before_delete_post', [self::class, 'cascadeDelete'], 10);
+
+        // User lifecycle: clean up rows tied to a user id that is about to
+        // disappear from wp_users. Without these hooks, _peepso_page_id
+        // meta and bcc_collections.user_id rows reference dead users
+        // indefinitely, breaking the page_id → valid owner contract that
+        // bcc-trust-engine and bcc-disputes both assume. deleted_user
+        // fires AFTER the wp_users row is gone but with the id still in
+        // scope, so this is the correct hook for cross-table cleanup.
+        add_action('deleted_user', [self::class, 'onUserDeleted'], 10, 1);
     }
 
     /**
@@ -244,6 +263,53 @@ final class ShadowPageSyncService
     }
 
     /**
+     * When a PeepSo page is TRASHED (not yet permanently deleted), trash
+     * the linked shadow CPTs so they disappear from user-facing queries
+     * in lockstep with the source page. Gallery-row DB cleanup is
+     * deferred to cascadeDelete — a trashed page can still be restored,
+     * and restore-from-trash rehydrates the links. Deleting gallery rows
+     * on trash would make restore lossy.
+     *
+     * @param int $postId
+     */
+    public static function cascadeTrash($postId): void
+    {
+        $post = get_post($postId);
+        if (!$post || $post->post_type !== 'peepso-page') {
+            return;
+        }
+
+        $pageId = (int) $postId;
+
+        // Serialise with flushQueue / cascadeDelete / PageRepairService
+        // on the integrity namespace for this page.
+        $lockKey      = 'integrity_' . $pageId;
+        $lockAcquired = LockRepository::tryAcquire($lockKey, self::LOCK_TTL);
+
+        try {
+            $shadowIds = self::findShadowPostIds($pageId);
+
+            foreach ($shadowIds as $cptId) {
+                $shadowPost = get_post($cptId);
+                if (!$shadowPost) {
+                    continue;
+                }
+                // Only trash shadows that are not already trashed; trashing
+                // a trashed post flips status back to a published state in
+                // some WP versions (wp_trash_post no-ops then).
+                if ($shadowPost->post_status === 'trash') {
+                    continue;
+                }
+                wp_trash_post($cptId);
+            }
+        } finally {
+            if ($lockAcquired) {
+                LockRepository::release($lockKey);
+            }
+        }
+    }
+
+    /**
      * When a PeepSo page is deleted, trash linked shadow CPTs and clean
      * up gallery rows that reference them.
      *
@@ -266,46 +332,7 @@ final class ShadowPageSyncService
         $lockAcquired = LockRepository::tryAcquire($lockKey, self::LOCK_TTL);
 
         try {
-            // Authoritative source: scan every known shadow CPT type for
-            // posts whose `_peepso_page_id` meta equals our page id. This
-            // is resilient to a drifted `_linked_cpts` aggregate that could
-            // omit a shadow created between a prior flushQueue and this
-            // delete — such omissions previously turned those shadows (and
-            // their gallery rows) into permanent orphans.
-            $shadowTypes = function_exists('bcc_get_shadow_cpt_types')
-                ? bcc_get_shadow_cpt_types()
-                : ['validators', 'nft', 'builder', 'dao'];
-
-            $shadowIds = [];
-            foreach ($shadowTypes as $cpt) {
-                if (!post_type_exists($cpt)) {
-                    continue;
-                }
-                $found = get_posts([
-                    'post_type'      => $cpt,
-                    'post_status'    => 'any',
-                    'meta_key'       => '_peepso_page_id',
-                    'meta_value'     => (string) $pageId,
-                    'posts_per_page' => -1,
-                    'fields'         => 'ids',
-                    'no_found_rows'  => true,
-                ]);
-                foreach ($found as $id) {
-                    $shadowIds[] = (int) $id;
-                }
-            }
-
-            // Belt-and-suspenders: also include anything the cached
-            // aggregate knew about, in case the meta scan missed a row
-            // (e.g. the shadow was trashed and the meta_value stored as
-            // int-string vs string mismatches).
-            $linked = get_post_meta($postId, '_linked_cpts', true);
-            if (is_array($linked)) {
-                foreach ($linked as $cptId) {
-                    $shadowIds[] = (int) $cptId;
-                }
-            }
-            $shadowIds = array_values(array_unique(array_filter($shadowIds)));
+            $shadowIds = self::findShadowPostIds($pageId);
 
             foreach ($shadowIds as $cptId) {
                 if (!get_post($cptId)) {
@@ -324,6 +351,127 @@ final class ShadowPageSyncService
             if ($lockAcquired) {
                 LockRepository::release($lockKey);
             }
+        }
+    }
+
+    /**
+     * Resolve every shadow CPT post id that belongs to the given source
+     * page id.
+     *
+     * Combines two sources so we never miss a shadow:
+     *   1. Authoritative scan: query every shadow CPT type for posts
+     *      whose `_peepso_page_id` meta equals $pageId. NUMERIC compare
+     *      is load-bearing — some writers stored the meta as int, some
+     *      as string, and a plain equality check can miss the other.
+     *   2. Cached aggregate: `_linked_cpts` post_meta on the source page.
+     *      A drifted aggregate can omit recent shadows (which is why the
+     *      scan exists), but the aggregate can also include trashed
+     *      shadows whose meta query missed them due to type mismatch.
+     *
+     * Returns a deduplicated list of shadow post ids, sorted by
+     * insertion order (scan first, aggregate second).
+     *
+     * @return int[]
+     */
+    private static function findShadowPostIds(int $pageId): array
+    {
+        $shadowTypes = function_exists('bcc_get_shadow_cpt_types')
+            ? bcc_get_shadow_cpt_types()
+            : ['validators', 'nft', 'builder', 'dao'];
+
+        $shadowIds = [];
+
+        foreach ($shadowTypes as $cpt) {
+            if (!post_type_exists($cpt)) {
+                continue;
+            }
+            $found = get_posts([
+                'post_type'      => $cpt,
+                'post_status'    => 'any',
+                'meta_query'     => [[
+                    'key'     => '_peepso_page_id',
+                    'value'   => $pageId,
+                    'compare' => '=',
+                    'type'    => 'NUMERIC',
+                ]],
+                'posts_per_page' => -1,
+                'fields'         => 'ids',
+                'no_found_rows'  => true,
+            ]);
+            foreach ($found as $id) {
+                $shadowIds[] = (int) $id;
+            }
+        }
+
+        $linked = get_post_meta($pageId, '_linked_cpts', true);
+        if (is_array($linked)) {
+            foreach ($linked as $cptId) {
+                $shadowIds[] = (int) $cptId;
+            }
+        }
+
+        return array_values(array_unique(array_filter($shadowIds)));
+    }
+
+    /**
+     * Lifecycle: the given user is being removed. Tear down the records
+     * that reference them.
+     *
+     * PeepSo's own user-delete flow typically reassigns peepso-page posts
+     * to an admin (content reassignment), but the shadow-CPT graph and
+     * bcc_collections rows reference the original user_id in ways PeepSo
+     * doesn't know about. Left in place, those rows break the
+     * page_id → valid owner contract the trust engine assumes.
+     *
+     * Scope:
+     *   - Find every shadow CPT authored by the deleted user and run the
+     *     same cascade used for page-delete: trash the CPT and purge
+     *     its gallery rows. We do NOT touch peepso-page posts themselves
+     *     — WordPress core (or the reassign_user_content path) handles
+     *     those; doing it here could race with that handling.
+     *   - Delete bcc_collections / bcc_collection_images rows owned by
+     *     this user on any post, via GalleryRepository::deleteByUserId.
+     *
+     * @param int $userId
+     */
+    public static function onUserDeleted($userId): void
+    {
+        $userId = (int) $userId;
+        if ($userId <= 0) {
+            return;
+        }
+
+        $shadowTypes = function_exists('bcc_get_shadow_cpt_types')
+            ? bcc_get_shadow_cpt_types()
+            : ['validators', 'nft', 'builder', 'dao'];
+
+        foreach ($shadowTypes as $cpt) {
+            if (!post_type_exists($cpt)) {
+                continue;
+            }
+
+            $owned = get_posts([
+                'post_type'      => $cpt,
+                'post_status'    => 'any',
+                'author'         => $userId,
+                'posts_per_page' => -1,
+                'fields'         => 'ids',
+                'no_found_rows'  => true,
+            ]);
+
+            foreach ($owned as $cptId) {
+                if (class_exists(GalleryRepository::class)) {
+                    GalleryRepository::deleteByPostId((int) $cptId);
+                }
+                wp_trash_post((int) $cptId);
+            }
+        }
+
+        // Remove any remaining collection rows still attributed to this
+        // user on posts owned by OTHER users (e.g. collaborative pages),
+        // so bcc_collections.user_id never references a deleted account.
+        if (class_exists(GalleryRepository::class)) {
+            GalleryRepository::deleteByUserId($userId);
         }
     }
 }

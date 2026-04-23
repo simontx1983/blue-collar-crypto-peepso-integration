@@ -15,20 +15,47 @@ global $wpdb;
 $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}bcc_collection_images");
 $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}bcc_collections");
 
-// 2. Delete all shadow CPT posts (batched to avoid memory exhaustion)
+// 2. Delete all shadow CPT posts (batched to avoid memory exhaustion).
+//
+// The loop is guarded against undeletable posts: if a permission hook
+// or sticky filter rejects every delete in a batch, the same 100 ids
+// would be re-fetched forever. We track whether any row was removed
+// per iteration and break when a batch makes zero progress, and cap
+// total iterations per CPT type to bound worst-case runtime. This
+// keeps a single sticky row from stalling site uninstall.
 $cpt_types = ['validators', 'nft', 'builder', 'dao'];
+$MAX_ITERATIONS_PER_TYPE = 1000; // 100k posts worst case per CPT.
+
 foreach ($cpt_types as $cpt) {
+    $iterations = 0;
     do {
+        $iterations++;
         $posts = get_posts([
             'post_type'      => $cpt,
             'posts_per_page' => 100,
             'post_status'    => 'any',
             'fields'         => 'ids',
+            'orderby'        => 'ID',
+            'order'          => 'ASC',
         ]);
-        foreach ($posts as $post_id) {
-            wp_delete_post($post_id, true);
+
+        if (empty($posts)) {
+            break;
         }
-    } while (!empty($posts));
+
+        $deleted_this_batch = 0;
+        foreach ($posts as $post_id) {
+            if (wp_delete_post($post_id, true) !== false) {
+                $deleted_this_batch++;
+            }
+        }
+
+        // If nothing in this batch could be removed, further iterations
+        // will re-fetch the same ids — bail rather than loop forever.
+        if ($deleted_this_batch === 0) {
+            break;
+        }
+    } while ($iterations < $MAX_ITERATIONS_PER_TYPE);
 }
 
 // 3. Remove post meta owned by THIS plugin only.

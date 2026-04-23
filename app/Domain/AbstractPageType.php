@@ -461,10 +461,18 @@ abstract class AbstractPageType
             return $linked;
         }
 
+        // NUMERIC meta compare — the page_id is a bigint post ID and
+        // has been stored as both int and string across writers; a
+        // string-only equality can silently miss a shadow whose backlink
+        // was stored as an int, leading to a duplicate create downstream.
         $found = get_posts([
             'post_type'      => static::post_type(),
-            'meta_key'       => '_peepso_page_id',
-            'meta_value'     => (string) $page_id,
+            'meta_query'     => [[
+                'key'     => '_peepso_page_id',
+                'value'   => $page_id,
+                'compare' => '=',
+                'type'    => 'NUMERIC',
+            ]],
             'posts_per_page' => 1,
             'fields'         => 'ids',
             'no_found_rows'  => true
@@ -475,47 +483,6 @@ abstract class AbstractPageType
         }
 
         return 0;
-    }
-
-    public static function create_from_page(int $page_id): int
-    {
-        if (!$page_id) return 0;
-
-        $page = get_post($page_id);
-        if (!$page) return 0;
-
-        // Atomic insert: `_peepso_page_id` and `_bcc_visibility` are written
-        // via `meta_input` inside the same DB statement as the post INSERT.
-        // Prior code issued wp_insert_post + two follow-up update_post_meta
-        // calls: a failure between them left an orphan shadow with no
-        // backlink meta, which `pageNeedsRepair()` could not detect,
-        // leading to repeated create attempts and duplicate shadows.
-        $id = wp_insert_post([
-            'post_type'   => static::post_type(),
-            'post_title'  => $page->post_title,
-            'post_status' => 'publish',
-            'post_author' => (int) $page->post_author,
-            'meta_input'  => [
-                '_peepso_page_id' => $page_id,
-                '_bcc_visibility' => 'public',
-            ],
-        ]);
-
-        if (!$id) {
-            return 0;
-        }
-
-        // The page-side backlink must also land; if it fails, delete the
-        // just-inserted shadow to avoid leaving a half-linked pair.
-        $linkMeta = '_linked_' . static::post_type() . '_id';
-        $linkOk   = update_post_meta($page_id, $linkMeta, $id);
-
-        if ($linkOk === false) {
-            wp_delete_post((int) $id, true);
-            return 0;
-        }
-
-        return (int) $id;
     }
 
     /* ======================================================
@@ -549,13 +516,61 @@ abstract class AbstractPageType
         return ($class && class_exists($class)) ? $class : null;
     }
 
+    /**
+     * Create a new shadow CPT of the given type for the given PeepSo page.
+     *
+     * Atomic insert: `_peepso_page_id` and `_bcc_visibility` are written
+     * via `meta_input` inside the same DB statement as the post INSERT,
+     * so a failure between post-create and meta-write cannot leave an
+     * orphan shadow with no backlink meta (which pageNeedsRepair()
+     * couldn't detect, previously leading to duplicate shadows).
+     *
+     * The page-side `_linked_<type>_id` backlink is written in a second
+     * step; if that fails we roll back by deleting the just-inserted
+     * shadow to avoid a half-linked pair.
+     */
     public static function create_from_page_by_type(int $page_id, string $post_type): int
     {
+        if (!$page_id) {
+            return 0;
+        }
+
         $class = self::resolve($post_type);
         if (!$class || !class_exists($class)) {
             return 0;
         }
-        return $class::create_from_page($page_id);
+
+        $page = get_post($page_id);
+        if (!$page) {
+            return 0;
+        }
+
+        $targetType = $class::post_type();
+
+        $id = wp_insert_post([
+            'post_type'   => $targetType,
+            'post_title'  => $page->post_title,
+            'post_status' => 'publish',
+            'post_author' => (int) $page->post_author,
+            'meta_input'  => [
+                '_peepso_page_id' => $page_id,
+                '_bcc_visibility' => 'public',
+            ],
+        ]);
+
+        if (!$id) {
+            return 0;
+        }
+
+        $linkMeta = '_linked_' . $targetType . '_id';
+        $linkOk   = update_post_meta($page_id, $linkMeta, $id);
+
+        if ($linkOk === false) {
+            wp_delete_post((int) $id, true);
+            return 0;
+        }
+
+        return (int) $id;
     }
 
 }

@@ -36,25 +36,53 @@ if (!function_exists('bcc_resolve_category_map_from_db')) {
     /**
      * Build the category ID → CPT map from the database (bypasses cache).
      *
+     * Paginated so a site with more than 100 peepso-page-cat posts does
+     * not silently lose categories from the map (which previously caused
+     * shadow CPTs to never be created for affected categories — a
+     * rule-10 silent failure). If the hard safety cap is hit we log an
+     * error; >1,000 page categories is outside the design envelope.
+     *
      * @return array<int, array{cpt: string, label: string}>
      */
     function bcc_resolve_category_map_from_db(): array {
         $slug_to_cpt = bcc_get_slug_to_cpt_map();
+        $batch_size  = 100;
+        $hard_cap    = 1000;
 
-        $cats = get_posts([
-            'post_type'      => 'peepso-page-cat',
-            'post_status'    => 'publish',
-            'posts_per_page' => 100,
-            'fields'         => 'all',
-        ]);
+        $map    = [];
+        $offset = 0;
 
-        $map = [];
-        foreach ($cats as $cat) {
-            $slug = $cat->post_name;
-            if (isset($slug_to_cpt[$slug])) {
-                $map[$cat->ID] = $slug_to_cpt[$slug];
+        do {
+            $cats = get_posts([
+                'post_type'      => 'peepso-page-cat',
+                'post_status'    => 'publish',
+                'posts_per_page' => $batch_size,
+                'offset'         => $offset,
+                'orderby'        => 'ID',
+                'order'          => 'ASC',
+                'no_found_rows'  => true,
+                'fields'         => 'all',
+            ]);
+
+            foreach ($cats as $cat) {
+                $slug = $cat->post_name;
+                if (isset($slug_to_cpt[$slug])) {
+                    $map[$cat->ID] = $slug_to_cpt[$slug];
+                }
             }
-        }
+
+            $offset += $batch_size;
+
+            if ($offset >= $hard_cap && count($cats) === $batch_size) {
+                if (class_exists('\\BCC\\Core\\Log\\Logger')) {
+                    \BCC\Core\Log\Logger::error(
+                        '[bcc-peepso] category map hit hard cap — categories beyond this point are invisible to the shadow-CPT pipeline',
+                        ['cap' => $hard_cap, 'batch_size' => $batch_size]
+                    );
+                }
+                break;
+            }
+        } while (count($cats) === $batch_size);
 
         return apply_filters('bcc_category_map', $map);
     }

@@ -726,4 +726,41 @@ class GalleryRepository
         }
         self::invalidatePostCaches($post_id);
     }
+
+    /**
+     * Delete every collection + image owned by the given user.
+     *
+     * Called from the deleted_user lifecycle hook so that bcc_collections
+     * rows referencing a no-longer-existent user_id do not persist
+     * indefinitely (which would also leave the companion
+     * bcc_collection_images rows dangling). Per-post iteration so the
+     * existing post-scoped transactional delete in deleteByPostId is
+     * reused — avoids duplicating the two-table delete semantics.
+     */
+    public static function deleteByUserId(int $user_id): void
+    {
+        global $wpdb;
+
+        if ($user_id <= 0) {
+            return;
+        }
+
+        $coll_table = self::collections_table();
+
+        // Scope: every post_id that has at least one collection owned by
+        // this user. DISTINCT to avoid redundant deleteByPostId calls
+        // when a user owns multiple collections on one post.
+        $post_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT DISTINCT post_id FROM {$coll_table} WHERE user_id = %d",
+            $user_id
+        ));
+
+        if (empty($post_ids)) {
+            return;
+        }
+
+        foreach ($post_ids as $post_id) {
+            self::deleteByPostId((int) $post_id);
+        }
+    }
 }

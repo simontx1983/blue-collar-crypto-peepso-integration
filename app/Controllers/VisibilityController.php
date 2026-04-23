@@ -7,6 +7,7 @@ if (!defined('ABSPATH')) {
 }
 
 use BCC\PeepSo\Security\AjaxSecurity;
+use BCC\PeepSo\Repositories\VisibilityRepository;
 use BCC\Core\Security\Throttle;
 use BCC\PeepSo\Domain\AbstractPageType;
 
@@ -69,20 +70,82 @@ class VisibilityController
             ]);
         }
 
-        // Optimistic locking: reject if another save bumped the version
-        // since this client last read the post.
+        $metaKey       = '_bcc_vis_' . sanitize_key($field);
         $clientVersion = isset($_POST['vis_version']) ? (int) $_POST['vis_version'] : null;
-        if ($clientVersion !== null && function_exists('bcc_get_visibility_version')) {
-            $serverVersion = bcc_get_visibility_version($post_id);
-            if ($clientVersion !== $serverVersion) {
+
+        // No-op shortcut: if the incoming value already matches what is
+        // stored, there is nothing to race on and no reason to bump the
+        // version. Also lets stale-client retries succeed idempotently.
+        $currentValue = get_post_meta($post_id, $metaKey, true);
+        if ($currentValue === $visibility) {
+            $currentVersion = function_exists('bcc_get_visibility_version')
+                ? bcc_get_visibility_version($post_id)
+                : 0;
+            wp_send_json_success([
+                'message'     => 'Visibility unchanged',
+                'post_id'     => $post_id,
+                'field'       => $field,
+                'visibility'  => $visibility,
+                'vis_version' => $currentVersion,
+            ]);
+        }
+
+        // Real CAS path. The previous implementation read the version in
+        // PHP, compared equal, then wrote — two concurrent writers could
+        // both pass the PHP check and both write, with the loser silently
+        // clobbering the winner. Here the bump is the compare-and-swap:
+        // whichever writer flips meta_value first wins; the other gets
+        // affected=0 and is rejected with 409 before writing the field.
+        if ($clientVersion !== null) {
+            // Make sure a counter row exists so CAS can target it. The
+            // insert is $unique=true — safe to repeat, safe under races
+            // (at most one row per post_id + meta_key combination lands).
+            VisibilityRepository::seedVersion($post_id);
+
+            if (!VisibilityRepository::compareAndBumpVersion($post_id, $clientVersion)) {
+                $serverVersion = function_exists('bcc_get_visibility_version')
+                    ? bcc_get_visibility_version($post_id)
+                    : 0;
                 wp_send_json_error([
                     'message'     => 'Someone else changed visibility. Please refresh and try again.',
                     'vis_version' => $serverVersion,
                     'conflict'    => true,
                 ], 409);
             }
+
+            // CAS won — commit the field write. If update_post_meta
+            // fails (DB error, not a no-op; the no-op case was handled
+            // above) we must undo the version bump so the next save
+            // from this client succeeds against the right version.
+            $metaResult = update_post_meta($post_id, $metaKey, $visibility);
+            if ($metaResult === false) {
+                VisibilityRepository::decrementVersion($post_id);
+                wp_send_json_error([
+                    'message' => 'Failed to save visibility'
+                ]);
+            }
+
+            if (function_exists('bcc_clear_visibility_cache')) {
+                bcc_clear_visibility_cache($post_id, $field);
+            }
+
+            $newVersion = function_exists('bcc_get_visibility_version')
+                ? bcc_get_visibility_version($post_id)
+                : 0;
+
+            wp_send_json_success([
+                'message'     => 'Visibility updated',
+                'post_id'     => $post_id,
+                'field'       => $field,
+                'visibility'  => $visibility,
+                'vis_version' => $newVersion,
+            ]);
         }
 
+        // Legacy / non-browser callers (CLI, server-to-server scripts)
+        // that do not track vis_version fall through to the unconditional
+        // write. These do not race with browser clients in practice, and
+        // the existing semantics are preserved for backward compatibility.
         $saved = bcc_set_field_visibility($post_id, $field, $visibility);
 
         if (!$saved) {
@@ -91,7 +154,6 @@ class VisibilityController
             ]);
         }
 
-        // Return the new version so the client can send it on the next save.
         $newVersion = function_exists('bcc_get_visibility_version')
             ? bcc_get_visibility_version($post_id)
             : 0;
